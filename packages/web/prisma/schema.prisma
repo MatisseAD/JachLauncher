@@ -1,0 +1,82 @@
+// Schéma Prisma — base SQLite locale pour l'MVP.
+// En production, basculer le provider sur postgresql.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  username  String     @unique
+  password  String // hash bcrypt
+  createdAt DateTime   @default(now())
+  launchers Launcher[]
+}
+
+model Launcher {
+  id      String @id @default(cuid())
+  // "slug" = le code que le joueur entre dans le launcher desktop.
+  slug    String @unique
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // --- Méta ---
+  title       String
+  description String  @default("")
+  status      String  @default("draft") // draft | ready | published
+  favorite    Boolean @default(false)
+
+  // --- Branding / apparence ---
+  logoUrl        String?
+  backgroundUrl  String?
+  primaryColor   String  @default("#5b8cff")
+  secondaryColor String  @default("#00d18f")
+  textColor      String  @default("#e6edf3")
+  theme          String  @default("dark") // dark | light
+  visualStyle    String  @default("premium") // premium | dark | light | pixel | medieval | futuristic
+  buttonStyle    String  @default("glow") // glow | flat | pixel | outline
+  cardShape      String  @default("rounded") // rounded | sharp | pill
+  menuPlacement  String  @default("left") // left | top
+  showNews       Boolean @default(true)
+  showDiscord    Boolean @default(false)
+  showWebsite    Boolean @default(false)
+  discordUrl     String?
+  websiteUrl     String?
+  supportUrl     String?
+  ambiance       String  @default("none") // none | fire | snow | stars | rain | glitch
+
+  // --- Minecraft ---
+  mcVersion        String  @default("1.20.1")
+  loader           String  @default("vanilla")
+  loaderVersion    String?
+  javaMajor        Int?
+  launcherType     String  @default("vanilla") // vanilla | modded | private | minigames | survival | rp
+  serverAddress    String?
+  serverPort       Int?
+  preLaunchMessage String  @default("")
+
+  // --- Mémoire JVM (Mo) ---
+  memMin Int @default(1024)
+  memMax Int @default(4096)
+
+  // --- Blobs JSON ---
+  mods          String @default("[]")
+  resourcepacks String @default("[]")
+  shaderpacks   String @default("[]")
+  news          String @default("[]")
+  events        String @default("[]")
+  patchNotes    String @default("[]")
+  maintenance   String @default("{\"active\":false}")
+  alert         String @default("{\"active\":false,\"kind\":\"info\",\"message\":\"\"}")
+  jvmArgs       String @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+}

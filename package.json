@@ -1,0 +1,27 @@
+{
+  "name": "jach-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plateforme de création de launchers Minecraft custom + launcher desktop adaptatif",
+  "workspaces": [
+    "packages/shared",
+    "packages/ui",
+    "packages/web",
+    "packages/launcher"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace=@jach/shared",
+    "build:ui": "npm run build --workspace=@jach/ui",
+    "build:libs": "npm run build:shared && npm run build:ui",
+    "dev:web": "npm run dev --workspace=@jach/web",
+    "dev:launcher": "npm run dev --workspace=@jach/launcher",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}
