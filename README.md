@@ -169,6 +169,10 @@ npm run package --workspace=@jach/launcher   # via electron-builder -> release/
   avec **prévisualisation en direct**, modèles de thème, auto-sauvegarde, upload
   d'assets, mods/packs/shaders, actualités, serveur, dupliquer / publier /
   favoris, pages aperçu / compte / aide, génération + téléchargement du manifeste.
+- **Vidéo d'intro** YourLauncher à l'arrivée (une fois par session), **zones
+  publicitaires** discrètes (placeholder, prêtes pour Google AdSense via
+  `NEXT_PUBLIC_ADSENSE_CLIENT`), **déploiement Vercel** prêt (voir
+  [DEPLOY.md](DEPLOY.md)).
 - Launcher : interface premium (skin partagé), fenêtre sans cadre, menu latéral,
   actualités, profil/compte (**avatar du joueur**), réglages persistés, états
   du bouton Jouer + barre de progression ; chargement par code, branding runtime,

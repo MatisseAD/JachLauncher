@@ -3,6 +3,8 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HeroMockup from "@/components/HeroMockup";
 import Particles from "@/components/Particles";
+import AdSlot from "@/components/AdSlot";
+import IntroVideo from "@/components/IntroVideo";
 import { getSession } from "@/lib/auth";
 import { getDict } from "@/i18n/server";
 
@@ -13,6 +15,7 @@ export default async function Home() {
 
   return (
     <>
+      <IntroVideo />
       <Navbar />
 
       {/* HERO */}
@@ -86,6 +89,11 @@ export default async function Home() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Pub — discrète, entre deux sections */}
+      <section className="container" style={{ paddingTop: 0, paddingBottom: 0 }}>
+        <AdSlot format="leaderboard" />
       </section>
 
       {/* COMMENT ÇA MARCHE */}

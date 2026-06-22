@@ -1,8 +1,11 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import Script from "next/script";
 import { getLocale, getDict } from "@/i18n/server";
 import { getDictionary } from "@/i18n/dictionaries";
 import { I18nProvider } from "@/i18n/I18nProvider";
+
+const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
 
 export async function generateMetadata(): Promise<Metadata> {
   const dict = await getDict();
@@ -28,6 +31,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body>
+        {ADSENSE_CLIENT && (
+          <Script
+            async
+            strategy="afterInteractive"
+            crossOrigin="anonymous"
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+          />
+        )}
         <I18nProvider locale={locale} dict={dict}>
           {children}
         </I18nProvider>

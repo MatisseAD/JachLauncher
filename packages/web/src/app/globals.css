@@ -972,6 +972,36 @@ code {
   font-size: 13px;
 }
 
+/* Emplacements publicitaires (discrets) */
+.ad-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: 1px dashed var(--border);
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.015);
+  overflow: hidden;
+}
+.ad-slot.rectangle {
+  max-width: 336px;
+  margin: 0 auto;
+}
+.ad-tag {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.ad-placeholder {
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
 /* feature card */
 .feature {
   padding: 22px;

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import LauncherCard, { type LauncherSummary } from "@/components/LauncherCard";
+import AdSlot from "@/components/AdSlot";
 import { getSession } from "@/lib/auth";
 import { getDict } from "@/i18n/server";
 import { prisma } from "@/lib/db";
@@ -73,6 +74,10 @@ export default async function DashboardPage() {
             ))}
           </div>
         )}
+
+        <div style={{ marginTop: 28 }}>
+          <AdSlot format="leaderboard" />
+        </div>
       </div>
     </>
   );

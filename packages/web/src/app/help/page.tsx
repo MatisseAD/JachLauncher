@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import AdSlot from "@/components/AdSlot";
 import { getDict } from "@/i18n/server";
 
 export default async function HelpPage() {
@@ -26,6 +27,10 @@ export default async function HelpPage() {
               </div>
             </div>
           ))}
+        </div>
+
+        <div style={{ margin: "24px 0" }}>
+          <AdSlot format="leaderboard" />
         </div>
 
         <h3 style={{ marginTop: 32 }}>{t.help.faqTitle}</h3>
