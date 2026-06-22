@@ -33,43 +33,41 @@ git push -u origin main
 |----------|-------------|--------|
 | `DATABASE_URL` | ✅ | URL **PostgreSQL** (voir §4) |
 | `AUTH_SECRET` | ✅ | chaîne aléatoire longue (`openssl rand -base64 32`) |
+| `BLOB_READ_WRITE_TOKEN` | ✅* | token Vercel Blob pour les uploads (voir §5) |
 | `NEXT_PUBLIC_ADSENSE_CLIENT` | ❌ | `ca-pub-XXXXXXXX` pour activer les pubs |
 
-## 4. Base de données (PostgreSQL en prod)
+\* Auto-injecté si tu crées un store **Vercel Blob** dans le projet.
 
-SQLite (utilisé en local) **ne fonctionne pas** sur Vercel (système de fichiers
-éphémère). En production, utilise Postgres :
+## 4. Base de données (PostgreSQL — automatique)
 
-1. Crée une base : **Vercel → Storage → Postgres** (ou Neon / Supabase).
-2. Dans [`packages/web/prisma/schema.prisma`](packages/web/prisma/schema.prisma),
-   passe le provider en Postgres :
-   ```prisma
-   datasource db {
-     provider = "postgresql"
-     url      = env("DATABASE_URL")
-   }
-   ```
-3. Copie l'`DATABASE_URL` de la base dans les variables Vercel.
-4. Applique le schéma (en local, avec cette `DATABASE_URL`) :
+SQLite (utilisé en local) ne fonctionne pas sur Vercel. **Tout est automatisé** :
+le build Vercel bascule le schéma Prisma en PostgreSQL
+([`scripts/use-postgres.mjs`](scripts/use-postgres.mjs)), crée/synchronise les
+tables (`prisma db push`) et génère le client Linux. Le dépôt reste en SQLite
+pour ton dev local (aucune modification à committer).
+
+Tu n'as qu'à :
+
+1. Créer une base : **Vercel → Storage → Postgres** (ou Neon / Supabase).
+   Si tu utilises Vercel Postgres, `DATABASE_URL` est ajouté automatiquement.
+2. Sinon, colle l'`DATABASE_URL` dans les variables d'environnement.
+3. (Optionnel) Charger les données démo une fois :
    ```bash
-   cd packages/web
-   DATABASE_URL="postgresql://…" npx prisma db push
+   cd packages/web && DATABASE_URL="postgresql://…" npm run db:seed
    ```
+   → compte `demo` / `secret123` + launchers d'exemple (`serveur-demo`, `rp-kingdom`).
 
-`prisma generate` tourne pendant le build Vercel (le moteur Linux est généré
-automatiquement).
+## 5. Upload d'images — Vercel Blob (automatique)
 
-## 5. Upload d'images (limite serverless)
+Les uploads (logo/fond) utilisent **Vercel Blob** dès que `BLOB_READ_WRITE_TOKEN`
+est présent (sinon disque local en dev). Le `storage.ts` gère les deux.
 
-L'upload de fichiers (logo/fond) écrit sur le disque local → **ne persiste pas**
-sur Vercel. Deux options :
+1. **Vercel → Storage → Create → Blob**, relie-le au projet.
+   `BLOB_READ_WRITE_TOKEN` est alors injecté automatiquement.
+2. C'est tout : les images uploadées sont stockées sur Blob (URL publique
+   persistante). Sinon, tu peux toujours coller des **URL d'images** dans l'éditeur.
 
-- **Simple** : dans l'éditeur, colle des **URL d'images** (déjà supporté).
-- **Complet** : brancher un stockage externe (Vercel Blob / S3) dans
-  `packages/web/src/lib/storage.ts`.
-
-Les comptes, launchers, manifestes et la génération fonctionnent normalement avec
-Postgres.
+Comptes, launchers, manifestes et génération fonctionnent normalement.
 
 ## 6. Déployer
 
