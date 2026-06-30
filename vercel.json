@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "npm install",
-  "buildCommand": "node scripts/use-postgres.mjs && npm run build:libs && npm run db:deploy --workspace=@jach/web && npm run build --workspace=@jach/web",
+  "buildCommand": "node scripts/use-postgres.mjs && npm run build:libs && npm run build --workspace=@jach/web",
   "outputDirectory": "packages/web/.next"
 }
