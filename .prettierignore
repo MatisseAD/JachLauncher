@@ -1,0 +1,9 @@
+node_modules
+dist
+out
+.next
+release
+storage
+coverage
+package-lock.json
+packages/launcher/src/renderer/public

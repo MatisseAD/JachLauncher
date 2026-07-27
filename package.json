@@ -1,0 +1,57 @@
+{
+  "name": "jach-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plateforme de création de launchers Minecraft custom + launcher desktop adaptatif",
+  "workspaces": [
+    "packages/shared",
+    "packages/ui",
+    "packages/web",
+    "packages/launcher"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace=@jach/shared",
+    "build:ui": "npm run build --workspace=@jach/ui",
+    "build:libs": "npm run build:shared && npm run build:ui",
+    "bootstrap": "npm run build:libs && npm run db:generate --workspace=@jach/web",
+    "build": "npm run build:libs && npm run build --workspace=@jach/web && npm run build --workspace=@jach/launcher",
+    "dev:web": "npm run dev --workspace=@jach/web",
+    "dev:launcher": "npm run dev --workspace=@jach/launcher",
+    "typecheck": "npm run bootstrap && npm run typecheck --workspaces --if-present",
+    "lint": "eslint \"packages/**/*.{ts,tsx}\" \"*.{ts,mjs}\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build:libs && vitest run",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "smoke:web": "node scripts/smoke-web.mjs",
+    "key:generate": "node scripts/generate-manifest-key.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@xmcl/installer": {
+      "undici": "7.29.0"
+    },
+    "@xmcl/file-transfer": {
+      "undici": "7.29.0"
+    },
+    "@vercel/blob": {
+      "undici": "6.28.0"
+    },
+    "postcss": "8.5.18",
+    "sharp": "0.35.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^15.5.22",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
+}

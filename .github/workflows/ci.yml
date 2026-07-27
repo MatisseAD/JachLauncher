@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: yourlauncher
+          POSTGRES_PASSWORD: yourlauncher
+          POSTGRES_DB: yourlauncher
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yourlauncher -d yourlauncher"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://yourlauncher:yourlauncher@localhost:5432/yourlauncher?schema=public
+      AUTH_SECRET: ci-only-secret-with-more-than-thirty-two-characters
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # Clé jetable et publique, réservée au test du chemin de signature.
+      MANIFEST_SIGNING_PRIVATE_KEY: MC4CAQAwBQYDK2VwBCIEILo76+uAcLfgZisT3QxmtjExdjAwYqWN22i1cr9pJ/ZW
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:deploy --workspace=@jach/web
+      - run: npm run db:seed --workspace=@jach/web
+      - run: npm run check
+      - run: npm run build
+      - run: npm run smoke:web
+      - run: npm audit --omit=dev

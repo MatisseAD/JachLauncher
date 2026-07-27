@@ -1,0 +1,35 @@
+{
+  "name": "@jach/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "prisma generate && next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:generate": "prisma generate",
+    "db:seed": "node prisma/seed.mjs"
+  },
+  "dependencies": {
+    "@jach/shared": "*",
+    "@jach/ui": "*",
+    "@prisma/client": "^6.19.3",
+    "@vercel/blob": "2.6.1",
+    "bcryptjs": "^3.0.3",
+    "jose": "^6.2.4",
+    "next": "15.5.22",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "prisma": "^6.19.3",
+    "typescript": "^5.9.3"
+  }
+}

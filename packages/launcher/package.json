@@ -1,0 +1,38 @@
+{
+  "name": "@jach/launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Launcher Minecraft adaptatif — applique un manifeste distant au runtime",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "package": "electron-vite build && electron-builder"
+  },
+  "dependencies": {
+    "@jach/shared": "*",
+    "@jach/ui": "*",
+    "@xmcl/core": "^2.15.1",
+    "@xmcl/installer": "6.1.2",
+    "extract-zip": "^2.0.1",
+    "msmc": "^5.0.5",
+    "tar": "^7.5.22",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/tar": "^6.1.13",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.2.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6"
+  }
+}

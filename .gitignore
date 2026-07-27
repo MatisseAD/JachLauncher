@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Builds
+dist/
+out/
+build/
+!packages/launcher/build/
+.next/
+*.tsbuildinfo
+
+# Electron
+packages/launcher/release/
+packages/launcher/dist-electron/
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# Database
+*.db
+*.db-journal
+packages/web/prisma/dev.db*
+
+# Uploaded assets (user content)
+packages/web/storage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
