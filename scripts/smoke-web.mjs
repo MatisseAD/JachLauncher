@@ -1,8 +1,27 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
-const command = process.platform === "win32" ? "npm.cmd" : "npm";
-const child = spawn(command, ["run", "start", "--workspace=@jach/web"], {
+const npmCli = [
+  process.env.npm_execpath,
+  path.join(
+    path.dirname(process.execPath),
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  ),
+].find((candidate) => candidate && existsSync(candidate));
+const command = npmCli ? process.execPath : "npm";
+const commandArguments = [
+  ...(npmCli ? [npmCli] : []),
+  "run",
+  "start",
+  "--workspace=@jach/web",
+];
+const child = spawn(command, commandArguments, {
   cwd: process.cwd(),
+  detached: process.platform !== "win32",
   env: {
     ...process.env,
     AUTH_SECRET:
@@ -36,6 +55,24 @@ async function waitFor(url, timeoutMs = 30_000) {
   throw new Error(`Délai dépassé pour ${url}\n${output}`);
 }
 
+function stopServerTree() {
+  if (!child.pid || child.exitCode !== null) return;
+
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    child.kill("SIGTERM");
+  }
+}
+
 try {
   const homepage = await waitFor("http://localhost:3000/");
   if (!(await homepage.text()).includes("YourLauncher")) {
@@ -53,5 +90,5 @@ try {
   }
   console.log("Smoke web réussi : accueil et manifeste v2 disponibles.");
 } finally {
-  child.kill();
+  stopServerTree();
 }
