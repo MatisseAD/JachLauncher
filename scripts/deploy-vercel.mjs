@@ -45,6 +45,7 @@ const npmRunner = resolveNpmRunner();
 
 const requiredEnvironmentVariables = [
   "DATABASE_URL",
+  "DIRECT_URL",
   "AUTH_SECRET",
   "NEXT_PUBLIC_APP_URL",
 ];
@@ -55,6 +56,7 @@ const optionalEnvironmentVariables = [
 ];
 const sensitiveEnvironmentVariables = new Set([
   "DATABASE_URL",
+  "DIRECT_URL",
   "AUTH_SECRET",
   "MANIFEST_SIGNING_PRIVATE_KEY",
   "BLOB_READ_WRITE_TOKEN",
@@ -190,15 +192,20 @@ function validateEnvironment(values, requireValues) {
     }
   }
 
-  if (values.DATABASE_URL) {
+  const databaseUrls = [
+    ["DATABASE_URL", values.DATABASE_URL],
+    ["DIRECT_URL", values.DIRECT_URL],
+  ];
+  for (const [name, value] of databaseUrls) {
+    if (!value) continue;
     let databaseUrl;
     try {
-      databaseUrl = new URL(values.DATABASE_URL);
+      databaseUrl = new URL(value);
     } catch {
-      throw new Error("DATABASE_URL n'est pas une URL valide.");
+      throw new Error(`${name} n'est pas une URL valide.`);
     }
     if (!["postgres:", "postgresql:"].includes(databaseUrl.protocol)) {
-      throw new Error("DATABASE_URL doit utiliser PostgreSQL.");
+      throw new Error(`${name} doit utiliser PostgreSQL.`);
     }
     if (
       ["localhost", "127.0.0.1", "::1"].includes(
@@ -206,7 +213,29 @@ function validateEnvironment(values, requireValues) {
       )
     ) {
       throw new Error(
-        "DATABASE_URL pointe vers cette machine et sera inaccessible depuis Vercel.",
+        `${name} pointe vers cette machine et sera inaccessible depuis Vercel.`,
+      );
+    }
+  }
+
+  if (values.DIRECT_URL) {
+    const directUrl = new URL(values.DIRECT_URL);
+    if ((directUrl.port || "5432") === "6543") {
+      throw new Error(
+        "DIRECT_URL doit utiliser la connexion directe ou le pooler Session Supabase sur le port 5432, jamais le pooler transactionnel 6543.",
+      );
+    }
+  }
+
+  if (values.DATABASE_URL) {
+    const runtimeUrl = new URL(values.DATABASE_URL);
+    if (
+      runtimeUrl.hostname.endsWith(".pooler.supabase.com") &&
+      runtimeUrl.port === "6543" &&
+      runtimeUrl.searchParams.get("pgbouncer") !== "true"
+    ) {
+      throw new Error(
+        "Ajoute pgbouncer=true aux paramètres de DATABASE_URL pour le pooler transactionnel Supabase.",
       );
     }
   }

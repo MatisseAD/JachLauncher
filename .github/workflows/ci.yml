@@ -26,6 +26,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://yourlauncher:yourlauncher@localhost:5432/yourlauncher?schema=public
+      DIRECT_URL: postgresql://yourlauncher:yourlauncher@localhost:5432/yourlauncher?schema=public
       AUTH_SECRET: ci-only-secret-with-more-than-thirty-two-characters
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       # Clé jetable et publique, réservée au test du chemin de signature.

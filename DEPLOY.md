@@ -16,7 +16,8 @@ de bascule SQLite ni de `db push` pendant le build.
 
 | Variable                       | Requise   | Description                                                     |
 | ------------------------------ | --------- | --------------------------------------------------------------- |
-| `DATABASE_URL`                 | oui       | URL PostgreSQL utilisée par Prisma et `migrate deploy`          |
+| `DATABASE_URL`                 | oui       | URL PostgreSQL poolée utilisée par l’application                |
+| `DIRECT_URL`                   | oui       | URL PostgreSQL directe/session utilisée par `migrate deploy`    |
 | `AUTH_SECRET`                  | oui       | secret aléatoire d’au moins 32 caractères                       |
 | `NEXT_PUBLIC_APP_URL`          | oui       | origine HTTPS publique, par exemple `https://app.example.com`   |
 | `MANIFEST_SIGNING_PRIVATE_KEY` | conseillé | clé privée Ed25519 en base64 (`npm run key:generate`)           |
@@ -45,8 +46,19 @@ Importe le dépôt avec la **racine du monorepo** comme Root Directory.
 La sortie est `packages/web/.next`.
 
 Le déploiement doit disposer d’une connexion PostgreSQL autorisée à créer ou
-modifier les tables. Si ton fournisseur distingue URL poolée et URL directe,
-utilise une URL adaptée aux migrations pour cette étape.
+modifier les tables. `DATABASE_URL` reste poolée pour le runtime serverless ;
+le script de migration remplace temporairement cette valeur par `DIRECT_URL`.
+Une migration bloquée est interrompue après 120 secondes au lieu de suspendre
+indéfiniment le build.
+
+Avec Supabase :
+
+- `DATABASE_URL` utilise le pooler **Transaction**, port `6543`, avec
+  `pgbouncer=true` dans ses paramètres ;
+- `DIRECT_URL` utilise la connexion **Direct** `db.<projet>.supabase.co:5432`
+  si le réseau Vercel peut la joindre, ou le pooler **Session**
+  `aws-…pooler.supabase.com:5432` ;
+- ne mets jamais le port `6543` dans `DIRECT_URL`.
 
 ## 4. Base de données
 
@@ -54,7 +66,7 @@ Avant le premier trafic, vérifie localement l’état :
 
 ```bash
 DATABASE_URL="postgresql://…" npm run db:status --workspace=@jach/web
-DATABASE_URL="postgresql://…" npm run db:deploy --workspace=@jach/web
+DIRECT_URL="postgresql://…" npm run db:deploy --workspace=@jach/web
 ```
 
 Le seed est réservé à une démo :
@@ -111,9 +123,9 @@ Crée d'abord un fichier local ignoré par Git :
 Copy-Item packages/web/.env.example packages/web/.env.vercel
 ```
 
-Remplace ses valeurs par l'URL PostgreSQL distante, un secret de 32 caractères
-minimum et le domaine HTTPS final. Ajoute aussi la clé produite par
-`npm run key:generate` et le jeton Vercel Blob, puis lance :
+Remplace ses valeurs par les URL PostgreSQL poolée et directe, un secret de
+32 caractères minimum et le domaine HTTPS final. Ajoute aussi la clé produite
+par `npm run key:generate` et le jeton Vercel Blob, puis lance :
 
 ```bash
 npm run deploy:vercel -- --env-file packages/web/.env.vercel
