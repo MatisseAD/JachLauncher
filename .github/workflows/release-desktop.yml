@@ -31,7 +31,7 @@ jobs:
         run: npm run typecheck --workspace=@jach/launcher
 
       - name: Build the branded Windows installer
-        run: npm run package --workspace=@jach/launcher -- --win
+        run: npm run package --workspace=@jach/launcher -- --win --publish never
 
       - name: Generate SHA-256 checksum
         shell: pwsh

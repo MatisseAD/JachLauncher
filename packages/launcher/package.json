@@ -1,6 +1,6 @@
 {
   "name": "@jach/launcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Launcher Minecraft adaptatif — applique un manifeste distant au runtime",
   "author": "YourLauncher",

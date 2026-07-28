@@ -11,7 +11,7 @@
     "db:deploy": "node ../../scripts/prisma-deploy.mjs",
     "db:status": "prisma migrate status",
     "db:generate": "prisma generate",
-    "db:seed": "node prisma/seed.mjs"
+    "db:seed": "prisma generate && node prisma/seed.mjs"
   },
   "dependencies": {
     "@jach/shared": "*",
