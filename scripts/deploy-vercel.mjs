@@ -61,6 +61,13 @@ const sensitiveEnvironmentVariables = new Set([
   "MANIFEST_SIGNING_PRIVATE_KEY",
   "BLOB_READ_WRITE_TOKEN",
 ]);
+const applicationDatabaseSchema = "jach_launcher";
+
+function isSupabaseHost(hostname) {
+  return (
+    hostname.endsWith(".supabase.com") || hostname.endsWith(".supabase.co")
+  );
+}
 
 function printUsage() {
   console.log(`
@@ -235,6 +242,17 @@ function validateEnvironment(values, requireValues) {
     ) {
       throw new Error(
         `${name} pointe vers cette machine et sera inaccessible depuis Vercel.`,
+      );
+    }
+    if (
+      isSupabaseHost(databaseUrl.hostname) &&
+      (!databaseUrl.searchParams.get("schema") ||
+        databaseUrl.searchParams.get("schema") === "public")
+    ) {
+      databaseUrl.searchParams.set("schema", applicationDatabaseSchema);
+      values[name] = databaseUrl.toString();
+      console.log(
+        `${name} isolée dans le schéma PostgreSQL ${applicationDatabaseSchema}.`,
       );
     }
   }

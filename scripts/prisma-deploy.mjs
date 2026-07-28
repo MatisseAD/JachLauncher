@@ -6,6 +6,7 @@ import process from "node:process";
 
 const require = createRequire(import.meta.url);
 const validateOnly = process.argv.includes("--validate-only");
+const applicationSchema = "jach_launcher";
 const timeoutMs = Number.parseInt(
   process.env.PRISMA_MIGRATION_TIMEOUT_MS ?? "120000",
   10,
@@ -25,6 +26,12 @@ function parsePostgresUrl(value, variableName) {
     throw new Error(`${variableName} doit utiliser PostgreSQL.`);
   }
   return url;
+}
+
+function isSupabaseHost(hostname) {
+  return (
+    hostname.endsWith(".supabase.com") || hostname.endsWith(".supabase.co")
+  );
 }
 
 async function main() {
@@ -55,6 +62,13 @@ async function main() {
     migrationUrl.searchParams.delete("pgbouncer");
     migrationUrl.searchParams.delete("connection_limit");
     migrationVariable = "DATABASE_URL dérivée en mode Session";
+  }
+  if (
+    isSupabaseHost(migrationUrl.hostname) &&
+    (!migrationUrl.searchParams.get("schema") ||
+      migrationUrl.searchParams.get("schema") === "public")
+  ) {
+    migrationUrl.searchParams.set("schema", applicationSchema);
   }
   const port = migrationUrl.port || "5432";
 

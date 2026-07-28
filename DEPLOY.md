@@ -69,6 +69,12 @@ Le script de déploiement ajoute automatiquement `pgbouncer=true` et
 `connection_limit=1` à `DATABASE_URL` lorsqu’il reconnaît le pooler
 transactionnel Supabase.
 
+Pour ne pas entrer en conflit avec les tables déjà présentes dans `public`, les
+URL Supabase sont automatiquement ciblées vers le schéma PostgreSQL privé
+`jach_launcher`. Prisma y conserve sa propre table `_prisma_migrations` et les
+tables de l’application. Aucun objet existant de `public`, `auth` ou `storage`
+n’est supprimé ou marqué artificiellement comme migré.
+
 ## 4. Base de données
 
 Avant le premier trafic, vérifie localement l’état :
