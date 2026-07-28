@@ -24,6 +24,7 @@
     "test": "npm run build:libs && vitest run",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
     "smoke:web": "node scripts/smoke-web.mjs",
+    "smoke:auth:production": "node scripts/smoke-auth-production.mjs",
     "key:generate": "node scripts/generate-manifest-key.mjs",
     "deploy:vercel": "node scripts/deploy-vercel.mjs"
   },
@@ -54,5 +55,9 @@
     "prettier": "^3.9.6",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.9"
   }
 }

@@ -14,6 +14,7 @@ build/
 # Electron
 packages/launcher/release/
 packages/launcher/dist-electron/
+tmp/
 
 # Environment
 .env

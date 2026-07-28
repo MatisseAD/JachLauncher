@@ -7,3 +7,4 @@ storage
 coverage
 package-lock.json
 packages/launcher/src/renderer/public
+.agents

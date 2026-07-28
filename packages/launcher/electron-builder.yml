@@ -3,14 +3,26 @@ productName: YourLauncher
 directories:
   output: release
   buildResources: build
+artifactName: ${productName}-Setup-${version}.${ext}
+asar: true
+compression: maximum
 files:
   - out/**/*
   - package.json
 win:
   target: nsis
+  icon: build/icon.png
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  installerSidebar: build/installerSidebar.bmp
+  installerHeader: build/installerHeader.bmp
+  shortcutName: YourLauncher
+  uninstallDisplayName: YourLauncher
+  language: 1036
+  runAfterFinish: true
 mac:
   target: dmg
 linux:

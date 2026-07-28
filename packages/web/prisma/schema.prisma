@@ -77,6 +77,20 @@ model Launcher {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  dailyMetrics LauncherDailyMetric[]
 
   @@index([ownerId])
+}
+
+// Agrégat journalier minimal : aucune IP, aucun identifiant joueur.
+// Un chargement correspond à une configuration demandée par le launcher desktop.
+model LauncherDailyMetric {
+  id            String   @id @default(cuid())
+  launcherId    String
+  launcher      Launcher @relation(fields: [launcherId], references: [id], onDelete: Cascade)
+  day           DateTime @db.Date
+  manifestLoads Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([launcherId, day])
 }

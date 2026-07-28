@@ -15,21 +15,169 @@ import {
   type LauncherFormData,
 } from "@/lib/launcher-types";
 import { PRESETS } from "@/lib/presets";
+import UiIcon, { type UiIconName } from "./UiIcon";
 import LauncherPreview from "./LauncherPreview";
 import AssetUpload from "./editor/AssetUpload";
 import FileListEditor from "./editor/FileListEditor";
 import NewsEditor from "./editor/NewsEditor";
 import { fetchReleaseVersions, FALLBACK_VERSIONS } from "@/lib/mc-versions";
 
-const STEPS = [
-  "Infos générales",
-  "Apparence",
-  "Minecraft",
-  "Mods & ressources",
-  "Actualités",
-  "Communauté",
-  "Aperçu final",
+const STEPS: {
+  short: string;
+  title: string;
+  description: string;
+  icon: UiIconName;
+}[] = [
+  {
+    short: "Modèle",
+    title: "Choisis ton point de départ",
+    description:
+      "Pars d’un univers prêt à personnaliser. Tu pourras modifier chaque détail ensuite.",
+    icon: "sparkles",
+  },
+  {
+    short: "Identité",
+    title: "Donne-lui une identité",
+    description:
+      "Définis le nom public, le code que tes joueurs saisiront et une courte présentation.",
+    icon: "user",
+  },
+  {
+    short: "Design",
+    title: "Crée son univers visuel",
+    description:
+      "Ajoute tes visuels, choisis les couleurs et façonne l’interface sans toucher au code.",
+    icon: "settings",
+  },
+  {
+    short: "Minecraft",
+    title: "Configure Minecraft",
+    description:
+      "Choisis la version, le loader, le serveur et la mémoire recommandée pour tes joueurs.",
+    icon: "server",
+  },
+  {
+    short: "Contenu",
+    title: "Ajoute le contenu à installer",
+    description:
+      "Mods, packs de ressources et shaders seront téléchargés et vérifiés automatiquement.",
+    icon: "layers",
+  },
+  {
+    short: "Actualités",
+    title: "Prépare l’accueil des joueurs",
+    description:
+      "Publie une première actualité ou garde cette section vide pour la compléter plus tard.",
+    icon: "activity",
+  },
+  {
+    short: "Communauté",
+    title: "Relie ta communauté",
+    description:
+      "Ajoute Discord, ton site, le support et une ambiance adaptée à ton serveur.",
+    icon: "users",
+  },
+  {
+    short: "Serveur",
+    title: "Anime la vie du serveur",
+    description:
+      "Gère les alertes, maintenances, événements et notes de mise à jour.",
+    icon: "shield",
+  },
+  {
+    short: "Publication",
+    title: "Vérifie et publie",
+    description:
+      "Relis l’essentiel, contrôle l’aperçu puis partage le code du launcher.",
+    icon: "rocket",
+  },
 ];
+
+const REQUIRED_STEPS = [1, 3, 4, 5, 6, 7];
+
+function isHttpUrl(value?: string | null) {
+  if (!value) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validateStep(index: number, data: LauncherFormData): string | null {
+  if (index === 1) {
+    if (data.title.trim().length < 3) {
+      return "Choisis un nom d’au moins 3 caractères.";
+    }
+    if (!/^[a-z0-9-]{3,40}$/.test(data.slug)) {
+      return "Le code doit contenir 3 à 40 lettres minuscules, chiffres ou tirets.";
+    }
+  }
+
+  if (index === 3) {
+    if (!data.mcVersion.trim()) return "Choisis une version de Minecraft.";
+    if (data.memMin > data.memMax) {
+      return "La RAM minimale ne peut pas dépasser la RAM maximale.";
+    }
+    if (
+      data.serverPort != null &&
+      (data.serverPort < 1 || data.serverPort > 65535)
+    ) {
+      return "Le port du serveur doit être compris entre 1 et 65535.";
+    }
+  }
+
+  if (index === 4) {
+    const incomplete = [
+      ...data.mods,
+      ...data.resourcepacks,
+      ...data.shaderpacks,
+    ].find(
+      (file) =>
+        !file.name.trim() ||
+        !file.fileName.trim() ||
+        !isHttpUrl(file.url) ||
+        !/^[0-9a-f]{64}$/i.test(file.sha256) ||
+        file.size <= 0,
+    );
+    if (incomplete) {
+      return `Complète le nom, l’URL, la taille et le SHA-256 de « ${incomplete.name || incomplete.fileName || "fichier sans nom"} ».`;
+    }
+  }
+
+  if (index === 5 && data.news.some((item) => !item.title.trim())) {
+    return "Chaque actualité ajoutée doit avoir un titre.";
+  }
+
+  if (index === 6) {
+    if (data.showDiscord && !isHttpUrl(data.discordUrl)) {
+      return "Ajoute une URL Discord valide ou désactive le bouton Discord.";
+    }
+    if (data.showWebsite && !isHttpUrl(data.websiteUrl)) {
+      return "Ajoute une URL de site valide ou désactive le bouton Site web.";
+    }
+    if (!isHttpUrl(data.supportUrl)) {
+      return "Le lien de support doit être une URL valide.";
+    }
+  }
+
+  if (index === 7) {
+    if (data.alert.active && !data.alert.message.trim()) {
+      return "Ajoute un message à la bannière d’alerte.";
+    }
+    if (
+      data.events.some((event) => !event.title.trim() || !event.startsAt.trim())
+    ) {
+      return "Chaque événement ajouté doit avoir un titre et une date.";
+    }
+    if (data.patchNotes.some((note) => !note.version.trim())) {
+      return "Chaque note de mise à jour doit indiquer une version.";
+    }
+  }
+
+  return null;
+}
 
 function slugify(s: string): string {
   const stripped = s
@@ -79,6 +227,7 @@ function sanitize(d: LauncherFormData) {
 }
 
 export default function WizardEditor({
+  mode,
   initial,
 }: {
   mode: "create" | "edit";
@@ -86,6 +235,12 @@ export default function WizardEditor({
 }) {
   const [data, setData] = useState<LauncherFormData>(initial ?? DEFAULT_FORM);
   const [step, setStep] = useState(0);
+  const [unlockedStep, setUnlockedStep] = useState(
+    mode === "edit" ? STEPS.length - 1 : 0,
+  );
+  const [selectedPreset, setSelectedPreset] = useState("premium-dark");
+  const [stepError, setStepError] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [save, setSave] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -96,14 +251,17 @@ export default function WizardEditor({
   const mounted = useRef(false);
   const inFlight = useRef<Promise<string | null> | null>(null);
   const blockedSlug = useRef<string | null>(null);
+  const stageRef = useRef<HTMLElement>(null);
 
   function set<K extends keyof LauncherFormData>(
     key: K,
     value: LauncherFormData[K],
   ) {
+    setStepError("");
     setData((d) => ({ ...d, [key]: value }));
   }
   function patch(p: Partial<LauncherFormData>) {
+    setStepError("");
     setData((d) => ({ ...d, ...p }));
   }
 
@@ -183,27 +341,21 @@ export default function WizardEditor({
 
   async function applyPreset(presetId: string) {
     const preset = PRESETS.find((p) => p.id === presetId);
-    if (preset) patch(preset.apply);
+    if (preset) {
+      setSelectedPreset(presetId);
+      patch(preset.apply);
+    }
   }
 
   async function generate() {
-    const incompleteFile = [
-      ...data.mods,
-      ...data.resourcepacks,
-      ...data.shaderpacks,
-    ].find(
-      (file) =>
-        !file.name.trim() ||
-        !file.fileName.trim() ||
-        !/^https?:\/\//i.test(file.url) ||
-        !/^[0-9a-f]{64}$/i.test(file.sha256) ||
-        file.size <= 0,
+    const invalidStep = REQUIRED_STEPS.find((index) =>
+      validateStep(index, data),
     );
-    if (incompleteFile) {
-      setSave("error");
-      setSaveError(
-        `Complète l’URL, le nom, la taille et le SHA-256 de « ${incompleteFile.name || incompleteFile.fileName || "fichier sans nom"} ».`,
-      );
+    if (invalidStep !== undefined) {
+      setStep(invalidStep);
+      setUnlockedStep((current) => Math.max(current, invalidStep));
+      setStepError(validateStep(invalidStep, data) ?? "");
+      stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     setGenerating(true);
@@ -239,103 +391,196 @@ export default function WizardEditor({
     typeof window !== "undefined" && data.slug
       ? `${window.location.origin}/api/manifest/${data.slug}`
       : "";
+  const currentStep = STEPS[step];
+  const progress = Math.round(((step + 1) / STEPS.length) * 100);
+
+  function showStep(index: number) {
+    if (index > unlockedStep) return;
+    setStep(index);
+    setStepError("");
+    stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function goNext() {
+    const error = validateStep(step, data);
+    if (error) {
+      setStepError(error);
+      return;
+    }
+
+    if (step === 1 && !data.id) {
+      const launcherId = await persist();
+      if (!launcherId) return;
+    }
+
+    const nextStep = Math.min(step + 1, STEPS.length - 1);
+    setUnlockedStep((current) => Math.max(current, nextStep));
+    setStep(nextStep);
+    setStepError("");
+    stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   return (
-    <div className="editor-layout">
-      {/* ---------- Colonne contrôles ---------- */}
-      <div>
-        {/* Stepper */}
-        <div className="stepper">
-          {STEPS.map((label, i) => (
-            <div
-              key={i}
-              className={`step ${i === step ? "active" : ""} ${i < step ? "done" : ""}`}
-              onClick={() => setStep(i)}
-            >
-              <span className="num">{i < step ? "✓" : i + 1}</span>
-              {label}
-            </div>
-          ))}
+    <div className="wizard-workspace">
+      <aside className="wizard-rail">
+        <div className="wizard-progress-copy">
+          <span>
+            Étape {step + 1} sur {STEPS.length}
+          </span>
+          <strong>{progress}%</strong>
+        </div>
+        <div
+          className="wizard-progress-track"
+          role="progressbar"
+          aria-label="Progression de la configuration"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+        >
+          <span style={{ width: `${progress}%` }} />
         </div>
 
-        <div className="card">
+        <nav className="wizard-steps" aria-label="Étapes de configuration">
+          {STEPS.map((item, index) => {
+            const active = index === step;
+            const done = index < step;
+            const locked = index > unlockedStep;
+            return (
+              <button
+                type="button"
+                key={item.short}
+                className={`wizard-step ${active ? "active" : ""} ${done ? "done" : ""}`}
+                onClick={() => showStep(index)}
+                disabled={locked}
+                aria-current={active ? "step" : undefined}
+              >
+                <span className="wizard-step-icon">
+                  {done ? (
+                    <UiIcon name="check" size={16} />
+                  ) : (
+                    <UiIcon name={item.icon} size={17} />
+                  )}
+                </span>
+                <span>
+                  <small>Étape {index + 1}</small>
+                  <strong>{item.short}</strong>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="wizard-reassurance">
+          <UiIcon name="shield" size={17} />
+          <span>
+            Tout est enregistré automatiquement dès que ton projet est créé.
+          </span>
+        </div>
+      </aside>
+
+      <section className="wizard-stage" ref={stageRef}>
+        <header className="wizard-stage-heading">
+          <div>
+            <span className="page-kicker">
+              Étape {step + 1} · {currentStep.short}
+            </span>
+            <h2>{currentStep.title}</h2>
+            <p>{currentStep.description}</p>
+          </div>
+          <button
+            type="button"
+            className="btn ghost sm wizard-preview-toggle"
+            onClick={() => setPreviewOpen((open) => !open)}
+          >
+            {previewOpen ? "Masquer l’aperçu" : "Voir l’aperçu"}
+          </button>
+        </header>
+
+        <div className="card wizard-card">
           {step === 0 && (
-            <StepInfos
-              data={data}
-              set={set}
-              patch={patch}
+            <StepTemplate
+              selectedPreset={selectedPreset}
               applyPreset={applyPreset}
             />
           )}
-          {step === 1 && <StepAppearance data={data} set={set} />}
-          {step === 2 && <StepMinecraft data={data} set={set} />}
-          {step === 3 && <StepContent data={data} set={set} />}
-          {step === 4 && <StepNews data={data} set={set} />}
-          {step === 5 && <StepCommunity data={data} set={set} />}
-          {step === 6 && (
+          {step === 1 && <StepIdentity data={data} set={set} patch={patch} />}
+          {step === 2 && <StepAppearance data={data} set={set} />}
+          {step === 3 && <StepMinecraft data={data} set={set} />}
+          {step === 4 && <StepContent data={data} set={set} />}
+          {step === 5 && <StepNews data={data} set={set} />}
+          {step === 6 && <StepCommunity data={data} set={set} />}
+          {step === 7 && <StepOperations data={data} set={set} />}
+          {step === 8 && (
             <StepFinal
               data={data}
               generating={generating}
               generated={generated}
               manifestUrl={manifestUrl}
               onGenerate={generate}
-              onEdit={() => setStep(0)}
+              onEdit={() => showStep(1)}
             />
           )}
         </div>
 
-        {/* Navigation */}
-        <div className="row spread" style={{ marginTop: 18 }}>
+        {(stepError || saveError) && (
+          <div className="wizard-error" role="alert">
+            <UiIcon name="help" size={18} />
+            <span>{stepError || saveError}</span>
+          </div>
+        )}
+
+        <footer className="wizard-navigation">
           <button
+            type="button"
             className="btn ghost"
             disabled={step === 0}
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            onClick={() => showStep(Math.max(0, step - 1))}
           >
             ← Précédent
           </button>
 
-          <div className="row" style={{ gap: 14 }}>
-            <AutosaveIndicator save={save} error={saveError} />
+          <div className="wizard-navigation-end">
+            <AutosaveIndicator save={save} error="" />
             {step < STEPS.length - 1 ? (
-              <button
-                className="btn"
-                onClick={() =>
-                  setStep((s) => Math.min(STEPS.length - 1, s + 1))
-                }
-              >
-                Suivant →
+              <button type="button" className="btn" onClick={goNext}>
+                Continuer
+                <UiIcon name="arrow" size={17} />
               </button>
             ) : (
               <Link className="btn ghost" href="/dashboard">
-                Terminer
+                Revenir au dashboard
               </Link>
             )}
           </div>
-        </div>
-      </div>
+        </footer>
+      </section>
 
-      {/* ---------- Colonne aperçu ---------- */}
-      <div className="preview-sticky">
-        <div className="row spread" style={{ marginBottom: 10 }}>
-          <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
-            Aperçu en direct
-          </span>
+      <aside
+        className={`wizard-preview ${previewOpen ? "is-open" : ""}`}
+        aria-label="Aperçu en direct"
+      >
+        <div className="wizard-preview-heading">
+          <div>
+            <span className="status-dot" />
+            <strong>Aperçu en direct</strong>
+          </div>
           {data.id && (
             <Link
               className="btn ghost sm"
               href={`/preview/${data.slug}`}
               target="_blank"
             >
-              Plein écran ↗
+              Plein écran
+              <UiIcon name="external" size={14} />
             </Link>
           )}
         </div>
         <LauncherPreview data={data} />
-        <p className="hint" style={{ marginTop: 10 }}>
-          Le rendu se met à jour à chaque modification. C&apos;est exactement ce
-          que verront tes joueurs.
+        <p>
+          Le rendu se met à jour immédiatement. C’est cette interface que tes
+          joueurs utiliseront.
         </p>
-      </div>
+      </aside>
     </div>
   );
 }
@@ -367,45 +612,64 @@ type StepProps = {
   set: <K extends keyof LauncherFormData>(k: K, v: LauncherFormData[K]) => void;
 };
 
-function StepInfos({
-  data,
-  set,
-  patch,
+function StepTemplate({
+  selectedPreset,
   applyPreset,
-}: StepProps & {
-  patch: (p: Partial<LauncherFormData>) => void;
+}: {
+  selectedPreset: string;
   applyPreset: (id: string) => void;
 }) {
   return (
+    <div className="preset-grid">
+      {PRESETS.map((preset) => (
+        <button
+          type="button"
+          key={preset.id}
+          className={`preset-card ${selectedPreset === preset.id ? "active" : ""}`}
+          onClick={() => applyPreset(preset.id)}
+          aria-pressed={selectedPreset === preset.id}
+        >
+          <span
+            className="preset-card-visual"
+            style={{
+              background: `linear-gradient(135deg, ${preset.apply.primaryColor}, ${preset.apply.secondaryColor})`,
+            }}
+          >
+            <span>{preset.emoji}</span>
+            {selectedPreset === preset.id && (
+              <span className="preset-selected">
+                <UiIcon name="check" size={14} />
+              </span>
+            )}
+          </span>
+          <span className="preset-card-copy">
+            <strong>{preset.name}</strong>
+            <small>{preset.description}</small>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StepIdentity({
+  data,
+  set,
+  patch,
+}: StepProps & {
+  patch: (p: Partial<LauncherFormData>) => void;
+}) {
+  return (
     <>
-      <h3 style={{ marginTop: 0 }}>1 · Informations générales</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Donne une identité à ton launcher. Choisis un modèle pour partir vite.
-      </p>
-
-      <label>Modèle de départ</label>
-      <div className="choice-grid" style={{ marginBottom: 18 }}>
-        {PRESETS.map((p) => (
-          <div key={p.id} className="choice" onClick={() => applyPreset(p.id)}>
-            <div
-              className="swatch"
-              style={{
-                background: `linear-gradient(120deg, ${p.apply.primaryColor}, ${p.apply.secondaryColor})`,
-              }}
-            />
-            <div className="name">
-              {p.emoji} {p.name}
-            </div>
-          </div>
-        ))}
-      </div>
-
       <div className="grid cols-2">
         <div className="field">
-          <label>Nom du launcher</label>
+          <label htmlFor="launcher-title">Nom du launcher</label>
           <input
+            id="launcher-title"
+            autoFocus
             value={data.title}
             placeholder="Ex : Skyblock Légendaire"
+            maxLength={60}
             onChange={(e) => {
               const title = e.target.value;
               patch({
@@ -417,88 +681,43 @@ function StepInfos({
               });
             }}
           />
-          <div className="hint">Le nom affiché en haut du launcher.</div>
+          <div className="hint">Visible en haut de l’application.</div>
         </div>
         <div className="field">
-          <label>Code (slug)</label>
+          <label htmlFor="launcher-slug">Code joueur</label>
           <input
+            id="launcher-slug"
             value={data.slug}
             placeholder="skyblock-legendaire"
+            maxLength={40}
             onChange={(e) => set("slug", slugify(e.target.value))}
           />
-          <div className="hint">
-            Le code que tes joueurs entrent dans le launcher.
-          </div>
+          <div className="hint">Tes joueurs saisiront exactement ce code.</div>
         </div>
       </div>
 
       <div className="field">
-        <label>Description courte</label>
+        <label htmlFor="launcher-description">
+          Description courte <span className="field-optional">facultatif</span>
+        </label>
         <textarea
+          id="launcher-description"
           value={data.description}
           placeholder="Ex : Le meilleur serveur Skyblock francophone, mis à jour chaque semaine."
+          maxLength={280}
           onChange={(e) => set("description", e.target.value)}
         />
+        <div className="field-counter">{data.description.length}/280</div>
       </div>
 
-      <AssetUpload
-        label="Logo"
-        kind="logo"
-        value={data.logoUrl}
-        launcherId={data.id}
-        onChange={(v) => set("logoUrl", v)}
-      />
-      <AssetUpload
-        label="Image de fond"
-        kind="background"
-        value={data.backgroundUrl}
-        launcherId={data.id}
-        onChange={(v) => set("backgroundUrl", v)}
-        hint="Format paysage recommandé (1920×1080)."
-      />
-
-      <div className="grid cols-2">
-        <div className="field">
-          <label>Couleur principale</label>
-          <input
-            type="color"
-            value={data.primaryColor}
-            onChange={(e) => set("primaryColor", e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label>Couleur secondaire</label>
-          <input
-            type="color"
-            value={data.secondaryColor}
-            onChange={(e) => set("secondaryColor", e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="field">
-        <label>Style visuel</label>
-        <div className="choice-grid">
-          {(
-            [
-              "premium",
-              "dark",
-              "light",
-              "pixel",
-              "medieval",
-              "futuristic",
-            ] as const
-          ).map((s) => (
-            <div
-              key={s}
-              className={`choice ${data.visualStyle === s ? "active" : ""}`}
-              onClick={() => set("visualStyle", s)}
-            >
-              <div className="name" style={{ textTransform: "capitalize" }}>
-                {s}
-              </div>
-            </div>
-          ))}
+      <div className="wizard-tip">
+        <UiIcon name="help" size={18} />
+        <div>
+          <strong>À quoi sert le code joueur ?</strong>
+          <p>
+            Il permet de retrouver ta configuration depuis l’application
+            YourLauncher. Utilise un code court et facile à partager.
+          </p>
         </div>
       </div>
     </>
@@ -509,34 +728,99 @@ function StepInfos({
 function StepAppearance({ data, set }: StepProps) {
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>2 · Apparence du launcher</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Designe ton launcher sans coder. Regarde l&apos;aperçu changer en
-        direct.
-      </p>
-
-      <div className="field">
-        <label>Couleur du texte</label>
-        <input
-          type="color"
-          value={data.textColor}
-          onChange={(e) => set("textColor", e.target.value)}
+      <div className="asset-grid">
+        <AssetUpload
+          label="Logo"
+          kind="logo"
+          value={data.logoUrl}
+          launcherId={data.id}
+          onChange={(value) => set("logoUrl", value)}
+          hint="Carré ou transparent, 512 × 512 conseillé."
+        />
+        <AssetUpload
+          label="Image de fond"
+          kind="background"
+          value={data.backgroundUrl}
+          launcherId={data.id}
+          onChange={(value) => set("backgroundUrl", value)}
+          hint="Paysage 1920 × 1080 conseillé."
         />
       </div>
 
       <div className="field">
-        <label>Style du bouton « Jouer »</label>
+        <label>Style visuel</label>
+        <div className="choice-grid visual-choice-grid">
+          {(
+            [
+              "premium",
+              "dark",
+              "light",
+              "pixel",
+              "medieval",
+              "futuristic",
+            ] as const
+          ).map((style) => (
+            <button
+              type="button"
+              key={style}
+              className={`choice ${data.visualStyle === style ? "active" : ""}`}
+              onClick={() => set("visualStyle", style)}
+            >
+              <span className="style-swatch" data-style={style} />
+              <span className="name">
+                {style === "premium"
+                  ? "Premium"
+                  : style === "dark"
+                    ? "Sombre"
+                    : style === "light"
+                      ? "Clair"
+                      : style === "pixel"
+                        ? "Pixel"
+                        : style === "medieval"
+                          ? "Médiéval"
+                          : "Futuriste"}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="color-grid">
+        {(
+          [
+            ["primaryColor", "Couleur principale"],
+            ["secondaryColor", "Couleur secondaire"],
+            ["textColor", "Couleur du texte"],
+          ] as const
+        ).map(([key, label]) => (
+          <label className="color-field" key={key}>
+            <span>{label}</span>
+            <span>
+              <input
+                type="color"
+                value={data[key]}
+                onChange={(event) => set(key, event.target.value)}
+              />
+              <code>{data[key]}</code>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="field">
+        <label>Style du bouton Jouer</label>
         <div className="choice-grid">
-          {(["glow", "flat", "pixel", "outline"] as const).map((s) => (
-            <div
-              key={s}
-              className={`choice ${data.buttonStyle === s ? "active" : ""}`}
-              onClick={() => set("buttonStyle", s)}
+          {(["glow", "flat", "pixel", "outline"] as const).map((style) => (
+            <button
+              type="button"
+              key={style}
+              className={`choice ${data.buttonStyle === style ? "active" : ""}`}
+              onClick={() => set("buttonStyle", style)}
             >
               <div className="name" style={{ textTransform: "capitalize" }}>
-                {s}
+                {style}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -586,58 +870,6 @@ function StepAppearance({ data, set }: StepProps) {
           </select>
         </div>
       </div>
-
-      <hr className="hr" />
-
-      <label className="switch" style={{ marginBottom: 14 }}>
-        <input
-          type="checkbox"
-          checked={data.showNews}
-          onChange={(e) => set("showNews", e.target.checked)}
-        />
-        <span className="track" />
-        Afficher les actualités
-      </label>
-
-      <div className="field">
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={data.showDiscord}
-            onChange={(e) => set("showDiscord", e.target.checked)}
-          />
-          <span className="track" />
-          Bouton Discord
-        </label>
-        {data.showDiscord && (
-          <input
-            placeholder="https://discord.gg/ton-serveur"
-            value={data.discordUrl ?? ""}
-            onChange={(e) => set("discordUrl", e.target.value)}
-            style={{ marginTop: 8 }}
-          />
-        )}
-      </div>
-
-      <div className="field">
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={data.showWebsite}
-            onChange={(e) => set("showWebsite", e.target.checked)}
-          />
-          <span className="track" />
-          Bouton Site web
-        </label>
-        {data.showWebsite && (
-          <input
-            placeholder="https://ton-site.fr"
-            value={data.websiteUrl ?? ""}
-            onChange={(e) => set("websiteUrl", e.target.value)}
-            style={{ marginTop: 8 }}
-          />
-        )}
-      </div>
     </>
   );
 }
@@ -660,12 +892,6 @@ function StepMinecraft({ data, set }: StepProps) {
 
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>3 · Configuration Minecraft</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Choisis la version et le type de serveur. Pas d&apos;inquiétude, tout
-        est expliqué.
-      </p>
-
       <div className="grid cols-2">
         <div className="field">
           <label>
@@ -841,10 +1067,16 @@ function StepMinecraft({ data, set }: StepProps) {
 function StepContent({ data, set }: StepProps) {
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>4 · Mods & ressources</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Contenu installé automatiquement avec le launcher chez tes joueurs.
-      </p>
+      <div className="wizard-tip">
+        <UiIcon name="shield" size={18} />
+        <div>
+          <strong>Des téléchargements vérifiés</strong>
+          <p>
+            Le SHA-256 garantit que le fichier reçu par tes joueurs correspond
+            exactement à celui que tu as configuré.
+          </p>
+        </div>
+      </div>
       <FileListEditor
         label="Mods"
         hint="Colle l'URL directe du .jar (ex : lien de téléchargement Modrinth)."
@@ -871,12 +1103,26 @@ function StepContent({ data, set }: StepProps) {
 function StepNews({ data, set }: StepProps) {
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>5 · Actualités du launcher</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Annonce tes mises à jour, events et patch notes directement dans le
-        launcher.
-      </p>
-      <NewsEditor items={data.news} onChange={(v) => set("news", v)} />
+      <label className="switch switch-card">
+        <input
+          type="checkbox"
+          checked={data.showNews}
+          onChange={(event) => set("showNews", event.target.checked)}
+        />
+        <span className="track" />
+        <span>
+          <strong>Afficher les actualités dans le launcher</strong>
+          <small>
+            Tu peux désactiver ce bloc si ton serveur n’en a pas encore besoin.
+          </small>
+        </span>
+      </label>
+      {data.showNews && (
+        <NewsEditor
+          items={data.news}
+          onChange={(value) => set("news", value)}
+        />
+      )}
     </>
   );
 }
@@ -892,6 +1138,92 @@ const AMBIANCES: { id: LauncherFormData["ambiance"]; label: string }[] = [
 ];
 
 function StepCommunity({ data, set }: StepProps) {
+  return (
+    <>
+      <div className="integration-grid">
+        <div className={`integration-card ${data.showDiscord ? "active" : ""}`}>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={data.showDiscord}
+              onChange={(event) => set("showDiscord", event.target.checked)}
+            />
+            <span className="track" />
+            <span>
+              <strong>Discord</strong>
+              <small>Affiche un accès direct à ta communauté.</small>
+            </span>
+          </label>
+          {data.showDiscord && (
+            <input
+              type="url"
+              placeholder="https://discord.gg/ton-serveur"
+              value={data.discordUrl ?? ""}
+              onChange={(event) => set("discordUrl", event.target.value)}
+            />
+          )}
+        </div>
+
+        <div className={`integration-card ${data.showWebsite ? "active" : ""}`}>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={data.showWebsite}
+              onChange={(event) => set("showWebsite", event.target.checked)}
+            />
+            <span className="track" />
+            <span>
+              <strong>Site web</strong>
+              <small>Redirige vers ta boutique, ton wiki ou ton site.</small>
+            </span>
+          </label>
+          {data.showWebsite && (
+            <input
+              type="url"
+              placeholder="https://ton-site.fr"
+              value={data.websiteUrl ?? ""}
+              onChange={(event) => set("websiteUrl", event.target.value)}
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="support-url">
+          Lien de support <span className="field-optional">facultatif</span>
+        </label>
+        <input
+          id="support-url"
+          type="url"
+          placeholder="https://discord.gg/… ou https://support.ton-site.fr"
+          value={data.supportUrl ?? ""}
+          onChange={(event) => set("supportUrl", event.target.value || null)}
+        />
+        <div className="hint">
+          Utilisé par le bouton « J’ai un problème » dans l’application.
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Ambiance animée</label>
+        <div className="choice-grid ambiance-grid">
+          {AMBIANCES.map((ambiance) => (
+            <button
+              type="button"
+              key={ambiance.id}
+              className={`choice ${data.ambiance === ambiance.id ? "active" : ""}`}
+              onClick={() => set("ambiance", ambiance.id)}
+            >
+              <span className="name">{ambiance.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function StepOperations({ data, set }: StepProps) {
   const events = data.events;
   const patch = data.patchNotes;
 
@@ -908,27 +1240,6 @@ function StepCommunity({ data, set }: StepProps) {
 
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>6 · Communauté & serveur</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Transforme ton launcher en centre de vie du serveur.
-      </p>
-
-      {/* Ambiance */}
-      <div className="field">
-        <label>Ambiance animée du fond</label>
-        <div className="choice-grid">
-          {AMBIANCES.map((a) => (
-            <div
-              key={a.id}
-              className={`choice ${data.ambiance === a.id ? "active" : ""}`}
-              onClick={() => set("ambiance", a.id)}
-            >
-              <div className="name">{a.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Bannière d'alerte */}
       <div className="card tight" style={{ marginBottom: 14 }}>
         <label className="switch">
@@ -1008,19 +1319,6 @@ function StepCommunity({ data, set }: StepProps) {
             />
           </div>
         )}
-      </div>
-
-      {/* Lien support */}
-      <div className="field">
-        <label>Lien de support</label>
-        <input
-          placeholder="https://discord.gg/… ou page support"
-          value={data.supportUrl ?? ""}
-          onChange={(e) => set("supportUrl", e.target.value || null)}
-        />
-        <div className="hint">
-          Utilisé par le bouton « J&apos;ai un problème » du launcher.
-        </div>
       </div>
 
       <hr className="hr" />
@@ -1191,19 +1489,12 @@ function StepFinal({
 }) {
   return (
     <>
-      <h3 style={{ marginTop: 0 }}>7 · Aperçu final & génération</h3>
-      <p className="muted" style={{ marginTop: -6 }}>
-        Vérifie le rendu à droite. Quand tout est bon, génère ton launcher.
-      </p>
-
-      <div className="card tight" style={{ marginBottom: 16 }}>
+      <div className="review-hero">
         <div className="row spread">
           <div>
-            <div style={{ fontWeight: 700 }}>{data.title || "Sans nom"}</div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              {data.mcVersion} · {data.loader} · {data.mods.length} mod(s) ·{" "}
-              {data.news.length} actu(s)
-            </div>
+            <span>Prêt à être partagé</span>
+            <h3>{data.title || "Sans nom"}</h3>
+            <code>{data.slug}</code>
           </div>
           <span className={`badge ${data.status}`}>
             <span className="dot" />
@@ -1213,6 +1504,54 @@ function StepFinal({
                 ? "Prêt"
                 : "Brouillon"}
           </span>
+        </div>
+      </div>
+
+      <div className="review-grid">
+        <button type="button" onClick={onEdit}>
+          <span>
+            <UiIcon name="user" size={18} />
+          </span>
+          <div>
+            <small>Identité</small>
+            <strong>{data.title || "À compléter"}</strong>
+          </div>
+        </button>
+        <div>
+          <span>
+            <UiIcon name="server" size={18} />
+          </span>
+          <div>
+            <small>Minecraft</small>
+            <strong>
+              {data.mcVersion} · {data.loader}
+            </strong>
+          </div>
+        </div>
+        <div>
+          <span>
+            <UiIcon name="layers" size={18} />
+          </span>
+          <div>
+            <small>Contenu automatique</small>
+            <strong>
+              {data.mods.length +
+                data.resourcepacks.length +
+                data.shaderpacks.length}{" "}
+              fichier(s)
+            </strong>
+          </div>
+        </div>
+        <div>
+          <span>
+            <UiIcon name="activity" size={18} />
+          </span>
+          <div>
+            <small>Communication</small>
+            <strong>
+              {data.news.length} actu · {data.events.length} événement(s)
+            </strong>
+          </div>
         </div>
       </div>
 

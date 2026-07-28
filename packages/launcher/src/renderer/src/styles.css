@@ -16,7 +16,7 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
   overflow: hidden;

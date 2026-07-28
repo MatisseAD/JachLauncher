@@ -1,13 +1,17 @@
 import { app } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DEFAULT_SETTINGS, type LauncherState } from "../shared-types/ipc";
+import {
+  DEFAULT_BASE_URL,
+  DEFAULT_SETTINGS,
+  type LauncherState,
+} from "../shared-types/ipc";
 
 // Persistance simple en JSON dans le dossier userData d'Electron.
 // (Évite une dépendance ESM comme electron-store.)
 
 const DEFAULT_STATE: LauncherState = {
-  baseUrl: process.env.JACH_BASE_URL ?? "http://localhost:3000",
+  baseUrl: process.env.JACH_BASE_URL ?? DEFAULT_BASE_URL,
   slug: null,
   account: null,
   settings: { ...DEFAULT_SETTINGS },

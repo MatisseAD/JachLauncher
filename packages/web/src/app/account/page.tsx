@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import ChangePassword from "@/components/ChangePassword";
-import LogoutButton from "@/components/LogoutButton";
+import DashboardShell from "@/components/DashboardShell";
+import UiIcon from "@/components/UiIcon";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { MAX_LAUNCHERS_PER_USER } from "@/lib/launcher-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -11,55 +12,75 @@ export default async function AccountPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const count = await prisma.launcher.count({
-    where: { ownerId: session.userId },
-  });
-  const published = await prisma.launcher.count({
-    where: { ownerId: session.userId, status: "published" },
-  });
+  const [count, published, user] = await prisma.$transaction([
+    prisma.launcher.count({ where: { ownerId: session.userId } }),
+    prisma.launcher.count({
+      where: { ownerId: session.userId, status: "published" },
+    }),
+    prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { createdAt: true },
+    }),
+  ]);
 
   return (
-    <>
-      <Navbar />
-      <div className="container narrow">
-        <h2>Mon compte</h2>
+    <DashboardShell username={session.username}>
+      <section className="dashboard-heading account-heading">
+        <div>
+          <span className="page-kicker">Paramètres</span>
+          <h1>Mon compte</h1>
+          <p>Gère ton profil créateur et la sécurité de ta session.</p>
+        </div>
+      </section>
 
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="row spread">
-            <div className="row" style={{ gap: 14 }}>
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 14,
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 24,
-                  fontWeight: 800,
-                  color: "#04140b",
-                  background: "var(--brand-grad)",
-                }}
-              >
-                {session.username.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 18 }}>
-                  {session.username}
-                </div>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  {count} launcher(s) · {published} publié(s)
-                </div>
-              </div>
-            </div>
-            <LogoutButton />
+      <div className="account-grid">
+        <section className="panel profile-panel">
+          <div className="profile-avatar">
+            {session.username.charAt(0).toUpperCase()}
           </div>
-        </div>
+          <h2>{session.username}</h2>
+          <p>Créateur YourLauncher</p>
+          <div className="profile-stats">
+            <div>
+              <strong>{count}</strong>
+              <span>Launchers</span>
+            </div>
+            <div>
+              <strong>{published}</strong>
+              <span>Publiés</span>
+            </div>
+            <div>
+              <strong>{MAX_LAUNCHERS_PER_USER - count}</strong>
+              <span>Places libres</span>
+            </div>
+          </div>
+          <span className="member-since">
+            <UiIcon name="sparkles" size={15} />
+            Membre depuis{" "}
+            {user?.createdAt.toLocaleDateString("fr-FR", {
+              month: "long",
+              year: "numeric",
+            })}
+          </span>
+        </section>
 
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Sécurité</h3>
+        <section className="panel security-panel">
+          <div className="panel-head">
+            <div>
+              <span className="panel-eyebrow">Sécurité</span>
+              <h2>Modifier le mot de passe</h2>
+            </div>
+            <span className="metric-icon green">
+              <UiIcon name="shield" size={19} />
+            </span>
+          </div>
+          <p>
+            Utilise un mot de passe unique d’au moins six caractères pour
+            protéger ton espace.
+          </p>
           <ChangePassword />
-        </div>
+        </section>
       </div>
-    </>
+    </DashboardShell>
   );
 }

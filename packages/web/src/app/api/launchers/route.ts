@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { LauncherInputSchema } from "@/lib/validation";
 import { toCreateData } from "@/lib/launcher-data";
+import { MAX_LAUNCHERS_PER_USER } from "@/lib/launcher-limits";
 import { Prisma } from "@prisma/client";
 
 // GET /api/launchers — liste les launchers de l'utilisateur connecté.
@@ -50,6 +51,18 @@ export async function POST(req: Request) {
     );
   }
   const data = parsed.data;
+
+  const launcherCount = await prisma.launcher.count({
+    where: { ownerId: session.userId },
+  });
+  if (launcherCount >= MAX_LAUNCHERS_PER_USER) {
+    return NextResponse.json(
+      {
+        error: `La limite actuelle est de ${MAX_LAUNCHERS_PER_USER} launchers par compte.`,
+      },
+      { status: 409 },
+    );
+  }
 
   const slugTaken = await prisma.launcher.findUnique({
     where: { slug: data.slug },

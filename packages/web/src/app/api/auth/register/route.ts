@@ -27,19 +27,20 @@ export async function POST(req: Request) {
   }
   const { username, password } = parsed.data;
 
-  const existing = await prisma.user.findUnique({ where: { username } });
-  if (existing) {
-    return NextResponse.json(
-      { error: "Nom d'utilisateur déjà pris" },
-      { status: 409 },
-    );
-  }
-
-  let user;
   try {
-    user = await prisma.user.create({
+    const existing = await prisma.user.findUnique({ where: { username } });
+    if (existing) {
+      return NextResponse.json(
+        { error: "Nom d'utilisateur déjà pris" },
+        { status: 409 },
+      );
+    }
+
+    const user = await prisma.user.create({
       data: { username, password: await hashPassword(password) },
     });
+    await createSession({ userId: user.id, username: user.username });
+    return NextResponse.json({ ok: true, username: user.username });
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -50,9 +51,10 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    throw error;
+    console.error("Échec de l'inscription", error);
+    return NextResponse.json(
+      { error: "Service d'inscription temporairement indisponible" },
+      { status: 503 },
+    );
   }
-  await createSession({ userId: user.id, username: user.username });
-
-  return NextResponse.json({ ok: true, username: user.username });
 }

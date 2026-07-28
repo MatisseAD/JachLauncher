@@ -53,6 +53,7 @@ const optionalEnvironmentVariables = [
   "MANIFEST_SIGNING_PRIVATE_KEY",
   "BLOB_READ_WRITE_TOKEN",
   "NEXT_PUBLIC_ADSENSE_CLIENT",
+  "NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL",
 ];
 const sensitiveEnvironmentVariables = new Set([
   "DATABASE_URL",
@@ -316,6 +317,22 @@ function validateEnvironment(values, requireValues) {
     }
   }
 
+  if (values.NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL) {
+    let downloadUrl;
+    try {
+      downloadUrl = new URL(values.NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL);
+    } catch {
+      throw new Error(
+        "NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL n'est pas une URL valide.",
+      );
+    }
+    if (downloadUrl.protocol !== "https:") {
+      throw new Error(
+        "NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL doit utiliser HTTPS sur Vercel.",
+      );
+    }
+  }
+
   if (values.MANIFEST_SIGNING_PRIVATE_KEY) {
     try {
       const privateKey = createPrivateKey({
@@ -555,7 +572,16 @@ async function main() {
   if (options.production) deployArguments.push("--prod");
   const deployOutput = await runVercel(deployArguments, { capture: true });
   const deploymentUrls = deployOutput.match(/https:\/\/[^\s]+/gu);
-  const deploymentUrl = deploymentUrls?.at(-1)?.replace(/[),.;]+$/u, "");
+  const cliDeploymentUrl = deploymentUrls
+    ?.map((url) => url.replace(/[")},.;]+$/u, ""))
+    .find((url) => {
+      try {
+        return new URL(url).hostname.endsWith(".vercel.app");
+      } catch {
+        return false;
+      }
+    });
+  const deploymentUrl = values.NEXT_PUBLIC_APP_URL || cliDeploymentUrl;
   if (!deploymentUrl) {
     throw new Error(
       `La CLI Vercel n'a pas retourné d'URL de déploiement : ${deployOutput}`,

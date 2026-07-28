@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "Launcher Minecraft adaptatif — applique un manifeste distant au runtime",
+  "author": "YourLauncher",
+  "homepage": "https://yourlauncher.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MatisseAD/JachLauncher.git"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -22,6 +28,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@fontsource/poppins": "^5.3.0",
     "@types/node": "^22.20.1",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",

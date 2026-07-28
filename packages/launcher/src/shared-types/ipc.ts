@@ -159,3 +159,4 @@ declare global {
     jach: JachApi;
   }
 }
+export const DEFAULT_BASE_URL = "https://yourlauncher.vercel.app";

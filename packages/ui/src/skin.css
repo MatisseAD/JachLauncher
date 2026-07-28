@@ -22,7 +22,7 @@
   min-height: 100%;
   overflow: hidden;
   color: var(--jt);
-  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   border-radius: 16px;
   isolation: isolate;

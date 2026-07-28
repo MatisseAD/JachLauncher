@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { assetUrl } from "@/lib/asset";
+import UiIcon from "./UiIcon";
 
 export interface LauncherSummary {
   id: string;
@@ -25,7 +26,7 @@ export interface LauncherSummary {
 const STATUS_LABEL: Record<string, string> = {
   draft: "Brouillon",
   ready: "Prêt",
-  published: "Publié",
+  published: "En ligne",
 };
 
 export default function LauncherCard({
@@ -35,140 +36,176 @@ export default function LauncherCard({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [fav, setFav] = useState(launcher.favorite);
+  const [favorite, setFavorite] = useState(launcher.favorite);
 
   const thumb = assetUrl(launcher.backgroundUrl) ?? undefined;
   const thumbStyle = thumb
     ? { backgroundImage: `url(${thumb})` }
     : {
-        background: `linear-gradient(120deg, ${launcher.primaryColor}, ${launcher.secondaryColor})`,
+        background: `radial-gradient(circle at 75% 20%, ${launcher.secondaryColor}66, transparent 42%), linear-gradient(135deg, ${launcher.primaryColor}55, #11111a 70%)`,
       };
   const logo = assetUrl(launcher.logoUrl);
 
-  async function toggleFav() {
-    setFav((f) => !f);
-    await fetch(`/api/launchers/${launcher.id}`, {
+  async function toggleFavorite() {
+    const next = !favorite;
+    setFavorite(next);
+    const response = await fetch(`/api/launchers/${launcher.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ favorite: !fav }),
+      body: JSON.stringify({ favorite: next }),
     });
+    if (!response.ok) setFavorite(!next);
     router.refresh();
   }
 
   async function togglePublish() {
     setBusy(true);
-    const next = launcher.status === "published" ? "draft" : "published";
-    await fetch(`/api/launchers/${launcher.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next }),
-    });
-    setBusy(false);
-    router.refresh();
+    try {
+      const next = launcher.status === "published" ? "draft" : "published";
+      const response = await fetch(`/api/launchers/${launcher.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        alert(body.error ?? "Impossible de modifier la publication.");
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function duplicate() {
     setBusy(true);
-    const res = await fetch(`/api/launchers/${launcher.id}/duplicate`, {
-      method: "POST",
-    });
-    setBusy(false);
-    if (res.ok) router.refresh();
+    try {
+      const response = await fetch(`/api/launchers/${launcher.id}/duplicate`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        alert(body.error ?? "Impossible de dupliquer ce launcher.");
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function remove() {
     if (
       !confirm(`Supprimer « ${launcher.title} » ? Cette action est définitive.`)
-    )
+    ) {
       return;
+    }
     setBusy(true);
-    const res = await fetch(`/api/launchers/${launcher.id}`, {
-      method: "DELETE",
-    });
-    setBusy(false);
-    if (res.ok) router.refresh();
+    try {
+      const response = await fetch(`/api/launchers/${launcher.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        alert("Impossible de supprimer ce launcher.");
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="launcher-card">
-      <div className="thumb" style={thumbStyle}>
-        {logo && <img className="logo" src={logo} alt="" />}
-        <div style={{ position: "absolute", top: 10, right: 10, zIndex: 1 }}>
-          <span className={`badge ${launcher.status}`}>
-            <span className="dot" />
-            {STATUS_LABEL[launcher.status] ?? launcher.status}
-          </span>
-        </div>
-        <div
-          className={`star ${fav ? "on" : ""}`}
-          style={{ position: "absolute", top: 10, left: 12, zIndex: 1 }}
-          onClick={toggleFav}
-          title="Favori"
+    <article className="launcher-card">
+      <div className="launcher-cover" style={thumbStyle}>
+        <button
+          className={`favorite-button ${favorite ? "active" : ""}`}
+          onClick={toggleFavorite}
+          aria-label={favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+          title={favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
         >
-          {fav ? "★" : "☆"}
+          {favorite ? "★" : "☆"}
+        </button>
+        <span className={`status-chip ${launcher.status}`}>
+          <i />
+          {STATUS_LABEL[launcher.status] ?? launcher.status}
+        </span>
+        <div className="launcher-identity">
+          {logo ? (
+            <img src={logo} alt="" />
+          ) : (
+            <span style={{ background: launcher.primaryColor }}>
+              {launcher.title.charAt(0).toUpperCase()}
+            </span>
+          )}
+          <div>
+            <h3>{launcher.title}</h3>
+            <code>{launcher.slug}</code>
+          </div>
         </div>
       </div>
 
-      <div className="body">
-        <div style={{ fontWeight: 800, fontSize: 16 }}>{launcher.title}</div>
-        <div className="muted" style={{ fontSize: 12, minHeight: 18 }}>
-          {launcher.description || "Sans description"}
-        </div>
-        <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
-          <span className="pill">{launcher.mcVersion}</span>
-          <span className="pill">{launcher.loader}</span>
-          <span className="pill">
-            modifié le{" "}
-            {new Date(launcher.updatedAt).toLocaleDateString("fr-FR")}
+      <div className="launcher-body">
+        <p>{launcher.description || "Aucune description pour le moment."}</p>
+        <div className="launcher-specs">
+          <span>
+            <UiIcon name="layers" size={14} />
+            Minecraft {launcher.mcVersion}
+          </span>
+          <span>
+            <UiIcon name="settings" size={14} />
+            {launcher.loader}
+          </span>
+          <span>
+            Mis à jour{" "}
+            {new Date(launcher.updatedAt).toLocaleDateString("fr-FR", {
+              day: "numeric",
+              month: "short",
+            })}
           </span>
         </div>
-
-        <div className="actions">
+        <div className="launcher-actions">
           <Link className="btn secondary sm" href={`/dashboard/${launcher.id}`}>
-            ✎ Modifier
+            Configurer
           </Link>
           <Link
-            className="btn ghost sm"
+            className="icon-action"
             href={`/preview/${launcher.slug}`}
             target="_blank"
+            aria-label="Ouvrir l’aperçu"
+            title="Ouvrir l’aperçu"
           >
-            👁 Aperçu
+            <UiIcon name="external" size={16} />
           </Link>
           <button
-            className="btn ghost sm"
+            className="icon-action"
             disabled={busy}
             onClick={togglePublish}
+            aria-label={
+              launcher.status === "published" ? "Dépublier" : "Publier"
+            }
+            title={launcher.status === "published" ? "Dépublier" : "Publier"}
           >
-            {launcher.status === "published" ? "Dépublier" : "🚀 Générer"}
+            <UiIcon name="rocket" size={16} />
           </button>
-          {launcher.status === "published" && (
-            <a
-              className="btn ghost sm"
-              href={`/api/manifest/${launcher.slug}?download=1`}
-              download
-            >
-              ⬇
-            </a>
-          )}
           <button
-            className="btn ghost sm"
+            className="icon-action"
             disabled={busy}
             onClick={duplicate}
+            aria-label="Dupliquer"
             title="Dupliquer"
           >
-            ⧉
+            <UiIcon name="layers" size={16} />
           </button>
           <button
-            className="btn ghost sm"
+            className="icon-action danger"
             disabled={busy}
             onClick={remove}
+            aria-label="Supprimer"
             title="Supprimer"
-            style={{ color: "var(--danger)" }}
           >
-            🗑
+            ×
           </button>
         </div>
       </div>
-    </div>
+    </article>
   );
 }

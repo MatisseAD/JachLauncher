@@ -23,7 +23,10 @@ export async function fetchManifest(
     const url = `${origin}/api/manifest/${encodeURIComponent(parsedSlug.data)}`;
     await assertSafeRemoteUrl(url, { allowLocalhost: true });
     const response = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "X-YourLauncher-Client": "desktop",
+      },
       signal: AbortSignal.timeout(30_000),
     });
     await assertSafeRemoteUrl(response.url, { allowLocalhost: true });

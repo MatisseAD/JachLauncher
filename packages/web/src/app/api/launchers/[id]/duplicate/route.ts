@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { MAX_LAUNCHERS_PER_USER } from "@/lib/launcher-limits";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -14,6 +15,18 @@ export async function POST(_req: Request, { params }: Ctx) {
   const src = await prisma.launcher.findUnique({ where: { id } });
   if (!src || src.ownerId !== session.userId) {
     return NextResponse.json({ error: "Introuvable" }, { status: 404 });
+  }
+
+  const launcherCount = await prisma.launcher.count({
+    where: { ownerId: session.userId },
+  });
+  if (launcherCount >= MAX_LAUNCHERS_PER_USER) {
+    return NextResponse.json(
+      {
+        error: `La limite actuelle est de ${MAX_LAUNCHERS_PER_USER} launchers par compte.`,
+      },
+      { status: 409 },
+    );
   }
 
   // Génère un slug libre : "<slug>-copie", "-copie-2", etc.

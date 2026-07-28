@@ -25,6 +25,9 @@ export async function GET(req: Request, { params }: Ctx) {
   const download = reqUrl.searchParams.get("download") === "1";
   try {
     const manifest = buildManifest(launcher, origin);
+    if (!download && req.headers.get("x-yourlauncher-client") === "desktop") {
+      await recordDesktopLoad(launcher.id);
+    }
     const headers = corsHeaders();
     if (download) {
       headers["Content-Disposition"] =
@@ -40,6 +43,26 @@ export async function GET(req: Request, { params }: Ctx) {
   }
 }
 
+async function recordDesktopLoad(launcherId: string) {
+  const now = new Date();
+  const day = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+
+  await prisma.launcherDailyMetric
+    .upsert({
+      where: { launcherId_day: { launcherId, day } },
+      create: { launcherId, day, manifestLoads: 1 },
+      update: { manifestLoads: { increment: 1 } },
+    })
+    .catch((error) => {
+      console.error("Launcher metric update failed", {
+        launcherId,
+        error: String(error),
+      });
+    });
+}
+
 // Le launcher Electron fait des requêtes cross-origin : on autorise.
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });
@@ -49,6 +72,7 @@ function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Accept, X-YourLauncher-Client",
     "Cache-Control": "no-store",
   };
 }

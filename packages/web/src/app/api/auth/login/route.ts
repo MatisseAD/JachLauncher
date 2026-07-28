@@ -22,18 +22,26 @@ export async function POST(req: Request) {
   }
   const { username, password } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { username } });
-  const hash =
-    user?.password ??
-    "$2b$10$BfF.1MWtfHYgmC2JcN5PzuVLRE1kwATJekMG4uZ23TwkbZuv3ya4u";
-  const valid = await verifyPassword(password, hash);
-  if (!user || !valid) {
+  try {
+    const user = await prisma.user.findUnique({ where: { username } });
+    const hash =
+      user?.password ??
+      "$2b$10$BfF.1MWtfHYgmC2JcN5PzuVLRE1kwATJekMG4uZ23TwkbZuv3ya4u";
+    const valid = await verifyPassword(password, hash);
+    if (!user || !valid) {
+      return NextResponse.json(
+        { error: "Identifiants incorrects" },
+        { status: 401 },
+      );
+    }
+
+    await createSession({ userId: user.id, username: user.username });
+    return NextResponse.json({ ok: true, username: user.username });
+  } catch (error) {
+    console.error("Échec de la connexion", error);
     return NextResponse.json(
-      { error: "Identifiants incorrects" },
-      { status: 401 },
+      { error: "Service de connexion temporairement indisponible" },
+      { status: 503 },
     );
   }
-
-  await createSession({ userId: user.id, username: user.username });
-  return NextResponse.json({ ok: true, username: user.username });
 }

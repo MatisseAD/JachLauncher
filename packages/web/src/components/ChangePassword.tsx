@@ -14,43 +14,54 @@ export default function ChangePassword() {
     setMsg("");
     setError("");
     setBusy(true);
-    const res = await fetch("/api/account/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentPassword: current, newPassword: next }),
-    });
-    setBusy(false);
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(json.error ?? "Erreur");
-      return;
+    try {
+      const res = await fetch("/api/account/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(json.error ?? "Erreur");
+        return;
+      }
+      setMsg("Mot de passe mis à jour ✓");
+      setCurrent("");
+      setNext("");
+    } catch {
+      setError("Connexion impossible. Réessaie dans quelques instants.");
+    } finally {
+      setBusy(false);
     }
-    setMsg("Mot de passe mis à jour ✓");
-    setCurrent("");
-    setNext("");
   }
 
   return (
     <form onSubmit={submit}>
       <div className="field">
-        <label>Mot de passe actuel</label>
+        <label htmlFor="current-password">Mot de passe actuel</label>
         <input
+          id="current-password"
           type="password"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
+          autoComplete="current-password"
+          placeholder="••••••••"
         />
       </div>
       <div className="field">
-        <label>Nouveau mot de passe</label>
+        <label htmlFor="new-password">Nouveau mot de passe</label>
         <input
+          id="new-password"
           type="password"
           value={next}
           onChange={(e) => setNext(e.target.value)}
+          autoComplete="new-password"
+          placeholder="6 caractères minimum"
         />
         <div className="hint">Minimum 6 caractères.</div>
       </div>
-      <button className="btn" disabled={busy}>
-        {busy ? "…" : "Mettre à jour"}
+      <button className="btn security-submit" disabled={busy}>
+        {busy ? "Mise à jour…" : "Mettre à jour"}
       </button>
       {msg && (
         <div className="success" style={{ marginTop: 10 }}>

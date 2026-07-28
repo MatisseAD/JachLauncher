@@ -13,6 +13,7 @@ import {
 } from "@jach/ui";
 import "@jach/ui/skin.css";
 import {
+  DEFAULT_BASE_URL,
   DEFAULT_SETTINGS,
   type Account,
   type LaunchPhase,
@@ -74,7 +75,7 @@ function ramForMode(
 
 export default function App() {
   const [ready, setReady] = useState(false);
-  const [baseUrl, setBaseUrl] = useState("http://localhost:3000");
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
   const [slug, setSlug] = useState("");
   const [manifest, setManifest] = useState<LauncherManifest | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
@@ -97,6 +98,7 @@ export default function App() {
   const [instanceStatus, setInstanceStatus] =
     useState<InstanceStatus>("first-install");
   const [adding, setAdding] = useState(false);
+  const [advancedSource, setAdvancedSource] = useState(false);
   const logsRef = useRef<string[]>([]);
 
   function notify(kind: SkinNotification["kind"], message: string) {
@@ -254,12 +256,6 @@ export default function App() {
         >
           Entre le code du launcher fourni par ton serveur.
         </p>
-        <label style={lbl}>Adresse du site</label>
-        <input
-          style={inp}
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-        />
         <label style={lbl}>Code du launcher</label>
         <input
           style={inp}
@@ -268,6 +264,34 @@ export default function App() {
           onChange={(e) => setSlug(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && connect()}
         />
+        <button
+          type="button"
+          style={{
+            display: "block",
+            margin: "-2px 0 14px",
+            padding: 0,
+            border: 0,
+            background: "transparent",
+            color: "#8f84ad",
+            fontSize: 11,
+            cursor: "pointer",
+          }}
+          onClick={() => setAdvancedSource((visible) => !visible)}
+        >
+          {advancedSource
+            ? "Masquer la source avancée"
+            : "Utiliser une autre source"}
+        </button>
+        {advancedSource && (
+          <>
+            <label style={lbl}>Adresse de la plateforme</label>
+            <input
+              style={inp}
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+            />
+          </>
+        )}
         <button style={connectBtn} disabled={busy || !slug} onClick={connect}>
           {busy
             ? "Chargement…"

@@ -1,0 +1,62 @@
+name: Release desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run build:libs
+
+      - name: Validate desktop types
+        run: npm run typecheck --workspace=@jach/launcher
+
+      - name: Build the branded Windows installer
+        run: npm run package --workspace=@jach/launcher -- --win
+
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $installer = Get-Item "packages/launcher/release/YourLauncher-Setup-*.exe"
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content "packages/launcher/release/SHA256SUMS.txt"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: YourLauncher ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## YourLauncher pour Windows
+
+            Installe l’application, ouvre-la puis saisis simplement le code fourni par ton serveur.
+
+            - Interface Poppins assortie au site YourLauncher
+            - Plateforme publique préconfigurée
+            - Installation guidée en français
+            - Vérification sécurisée des manifestes et téléchargements
+
+            > L’application n’est pas encore signée avec un certificat commercial. Windows SmartScreen peut donc afficher un avertissement lors du premier téléchargement.
+          files: |
+            packages/launcher/release/YourLauncher-Setup-*.exe
+            packages/launcher/release/YourLauncher-Setup-*.exe.blockmap
+            packages/launcher/release/SHA256SUMS.txt

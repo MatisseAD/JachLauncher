@@ -17,7 +17,7 @@ const fr = {
     titleHighlight: "gratuitement",
     titleLine2: "en quelques minutes",
     subtitle:
-      "Configure l'apparence, les versions, les mods et les actualités, puis génère ton launcher. Aucune carte bancaire, aucune limite : c'est gratuit pour tout le monde.",
+      "Configure l'apparence, les versions, les mods et les actualités, puis génère ton launcher. Aucune carte bancaire : tu peux gérer jusqu'à 3 launchers gratuitement.",
     ctaPrimary: "Créer mon launcher",
     ctaSecondary: "Voir un exemple",
     perk1: "Sans coder",
@@ -28,9 +28,9 @@ const fr = {
     eyebrow: "Gratuit, vraiment",
     title: "Gratuit pour tout le monde, pour toujours",
     subtitle:
-      "Pas d'abonnement, pas de fonctionnalités payantes cachées, pas de limite de launchers. Crée autant de launchers que tu veux, gratuitement.",
+      "Pas d'abonnement ni de fonctionnalités payantes cachées. Crée et gère jusqu'à 3 launchers gratuitement.",
     b1: "0 € — aucune carte bancaire",
-    b2: "Launchers illimités",
+    b2: "Jusqu'à 3 launchers",
     b3: "Toutes les fonctionnalités, pour tous",
   },
   features: {
@@ -154,7 +154,7 @@ const fr = {
     faq: [
       {
         q: "C'est vraiment gratuit ?",
-        a: "Oui, totalement gratuit pour tout le monde, sans limite et sans carte bancaire.",
+        a: "Oui, totalement gratuit et sans carte bancaire, avec une limite actuelle de 3 launchers par compte.",
       },
       {
         q: "Mes joueurs doivent-ils télécharger un launcher différent ?",
@@ -192,7 +192,7 @@ const en: Dict = {
     titleHighlight: "for free",
     titleLine2: "in just minutes",
     subtitle:
-      "Customize the look, versions, mods and news, then generate your launcher. No credit card, no limits — it's free for everyone.",
+      "Customize the look, versions, mods and news, then generate your launcher. No credit card: manage up to 3 launchers for free.",
     ctaPrimary: "Create my launcher",
     ctaSecondary: "See an example",
     perk1: "No coding",
@@ -203,9 +203,9 @@ const en: Dict = {
     eyebrow: "Free, for real",
     title: "Free for everyone, forever",
     subtitle:
-      "No subscription, no hidden paid features, no launcher limits. Create as many launchers as you want, for free.",
+      "No subscription or hidden paid features. Create and manage up to 3 launchers for free.",
     b1: "$0 — no credit card",
-    b2: "Unlimited launchers",
+    b2: "Up to 3 launchers",
     b3: "Every feature, for everyone",
   },
   features: {
@@ -326,7 +326,7 @@ const en: Dict = {
     faq: [
       {
         q: "Is it really free?",
-        a: "Yes, completely free for everyone, with no limits and no credit card.",
+        a: "Yes, completely free with no credit card, with a current limit of 3 launchers per account.",
       },
       {
         q: "Do my players need a different launcher?",
@@ -362,7 +362,7 @@ const es: Dict = {
     titleHighlight: "gratis",
     titleLine2: "en pocos minutos",
     subtitle:
-      "Configura la apariencia, las versiones, los mods y las noticias, y genera tu launcher. Sin tarjeta, sin límites: es gratis para todos.",
+      "Configura la apariencia, las versiones, los mods y las noticias. Sin tarjeta: gestiona hasta 3 launchers gratis.",
     ctaPrimary: "Crear mi launcher",
     ctaSecondary: "Ver un ejemplo",
     perk1: "Sin programar",
@@ -373,9 +373,9 @@ const es: Dict = {
     eyebrow: "Gratis, de verdad",
     title: "Gratis para todos, para siempre",
     subtitle:
-      "Sin suscripción, sin funciones de pago ocultas, sin límite de launchers. Crea todos los que quieras, gratis.",
+      "Sin suscripción ni funciones de pago ocultas. Crea y gestiona hasta 3 launchers gratis.",
     b1: "0 € — sin tarjeta",
-    b2: "Launchers ilimitados",
+    b2: "Hasta 3 launchers",
     b3: "Todas las funciones, para todos",
   },
   features: {
@@ -496,7 +496,7 @@ const es: Dict = {
     faq: [
       {
         q: "¿Es realmente gratis?",
-        a: "Sí, totalmente gratis para todos, sin límites y sin tarjeta.",
+        a: "Sí, totalmente gratis y sin tarjeta, con un límite actual de 3 launchers por cuenta.",
       },
       {
         q: "¿Mis jugadores necesitan otro launcher?",
@@ -532,7 +532,7 @@ const de: Dict = {
     titleHighlight: "kostenlos",
     titleLine2: "in wenigen Minuten",
     subtitle:
-      "Passe Aussehen, Versionen, Mods und News an und generiere deinen Launcher. Keine Kreditkarte, keine Limits – kostenlos für alle.",
+      "Passe Aussehen, Versionen, Mods und News an. Keine Kreditkarte: Verwalte bis zu 3 Launcher kostenlos.",
     ctaPrimary: "Meinen Launcher erstellen",
     ctaSecondary: "Beispiel ansehen",
     perk1: "Ohne Programmieren",
@@ -543,9 +543,9 @@ const de: Dict = {
     eyebrow: "Wirklich kostenlos",
     title: "Kostenlos für alle, für immer",
     subtitle:
-      "Kein Abo, keine versteckten Kostenfunktionen, kein Launcher-Limit. Erstelle so viele Launcher du willst – gratis.",
+      "Kein Abo und keine versteckten Kosten. Erstelle und verwalte bis zu 3 Launcher kostenlos.",
     b1: "0 € — keine Kreditkarte",
-    b2: "Unbegrenzte Launcher",
+    b2: "Bis zu 3 Launcher",
     b3: "Alle Funktionen, für alle",
   },
   features: {
@@ -668,7 +668,7 @@ const de: Dict = {
     faq: [
       {
         q: "Ist es wirklich kostenlos?",
-        a: "Ja, völlig kostenlos für alle, ohne Limits und ohne Kreditkarte.",
+        a: "Ja, völlig kostenlos und ohne Kreditkarte, aktuell mit 3 Launchern pro Konto.",
       },
       {
         q: "Brauchen meine Spieler einen anderen Launcher?",
@@ -704,7 +704,7 @@ const pt: Dict = {
     titleHighlight: "de graça",
     titleLine2: "em poucos minutos",
     subtitle:
-      "Personalize a aparência, as versões, os mods e as notícias e gere o seu launcher. Sem cartão, sem limites — é grátis para todos.",
+      "Personalize a aparência, as versões, os mods e as notícias. Sem cartão: gerencie até 3 launchers grátis.",
     ctaPrimary: "Criar meu launcher",
     ctaSecondary: "Ver um exemplo",
     perk1: "Sem programar",
@@ -715,9 +715,9 @@ const pt: Dict = {
     eyebrow: "Grátis de verdade",
     title: "Grátis para todos, para sempre",
     subtitle:
-      "Sem assinatura, sem recursos pagos escondidos, sem limite de launchers. Crie quantos quiser, de graça.",
+      "Sem assinatura ou recursos pagos escondidos. Crie e gerencie até 3 launchers de graça.",
     b1: "R$ 0 — sem cartão",
-    b2: "Launchers ilimitados",
+    b2: "Até 3 launchers",
     b3: "Todos os recursos, para todos",
   },
   features: {
@@ -838,7 +838,7 @@ const pt: Dict = {
     faq: [
       {
         q: "É realmente grátis?",
-        a: "Sim, totalmente grátis para todos, sem limites e sem cartão.",
+        a: "Sim, totalmente grátis e sem cartão, com o limite atual de 3 launchers por conta.",
       },
       {
         q: "Meus jogadores precisam de outro launcher?",
@@ -874,7 +874,7 @@ const it: Dict = {
     titleHighlight: "gratis",
     titleLine2: "in pochi minuti",
     subtitle:
-      "Personalizza aspetto, versioni, mod e notizie, poi genera il tuo launcher. Nessuna carta, nessun limite — è gratis per tutti.",
+      "Personalizza aspetto, versioni, mod e notizie. Nessuna carta: gestisci fino a 3 launcher gratis.",
     ctaPrimary: "Crea il mio launcher",
     ctaSecondary: "Vedi un esempio",
     perk1: "Senza programmare",
@@ -885,9 +885,9 @@ const it: Dict = {
     eyebrow: "Gratis, davvero",
     title: "Gratis per tutti, per sempre",
     subtitle:
-      "Nessun abbonamento, nessuna funzione a pagamento nascosta, nessun limite di launcher. Creane quanti vuoi, gratis.",
+      "Nessun abbonamento o funzione a pagamento nascosta. Crea e gestisci fino a 3 launcher gratis.",
     b1: "0 € — nessuna carta",
-    b2: "Launcher illimitati",
+    b2: "Fino a 3 launcher",
     b3: "Tutte le funzioni, per tutti",
   },
   features: {
@@ -1011,7 +1011,7 @@ const it: Dict = {
     faq: [
       {
         q: "È davvero gratis?",
-        a: "Sì, completamente gratis per tutti, senza limiti e senza carta.",
+        a: "Sì, completamente gratis e senza carta, con un limite attuale di 3 launcher per account.",
       },
       {
         q: "I miei giocatori servono un altro launcher?",

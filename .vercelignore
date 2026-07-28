@@ -1,0 +1,24 @@
+# Dépendances et sorties locales
+node_modules/
+**/node_modules/
+**/.next/
+**/dist/
+**/out/
+*.tsbuildinfo
+*.log
+
+# L'application Electron n'est pas déployée sur Vercel
+packages/launcher/
+
+# Données et outils réservés au poste de développement
+packages/web/storage/
+.agents/
+.claude/
+.github/
+.vercel/
+compose.yaml
+
+# Secrets locaux
+.env
+.env.*
+packages/web/prisma/.env

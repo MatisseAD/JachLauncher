@@ -14,15 +14,16 @@ de bascule SQLite ni de `db push` pendant le build.
 
 ## 2. Variables d’environnement
 
-| Variable                       | Requise    | Description                                                     |
-| ------------------------------ | ---------- | --------------------------------------------------------------- |
-| `DATABASE_URL`                 | oui        | URL PostgreSQL poolée utilisée par l’application                |
-| `DIRECT_URL`                   | conseillée | URL PostgreSQL directe/session utilisée par `migrate deploy`    |
-| `AUTH_SECRET`                  | oui        | secret aléatoire d’au moins 32 caractères                       |
-| `NEXT_PUBLIC_APP_URL`          | oui        | origine HTTPS publique, par exemple `https://app.example.com`   |
-| `MANIFEST_SIGNING_PRIVATE_KEY` | conseillé  | clé privée Ed25519 en base64 (`npm run key:generate`)           |
-| `BLOB_READ_WRITE_TOKEN`        | conseillé  | injecté par Vercel Blob ; sinon les uploads utilisent le disque |
-| `NEXT_PUBLIC_ADSENSE_CLIENT`   | non        | identifiant `ca-pub-…` pour charger AdSense                     |
+| Variable                            | Requise    | Description                                                     |
+| ----------------------------------- | ---------- | --------------------------------------------------------------- |
+| `DATABASE_URL`                      | oui        | URL PostgreSQL poolée utilisée par l’application                |
+| `DIRECT_URL`                        | conseillée | URL PostgreSQL directe/session utilisée par `migrate deploy`    |
+| `AUTH_SECRET`                       | oui        | secret aléatoire d’au moins 32 caractères                       |
+| `NEXT_PUBLIC_APP_URL`               | oui        | origine HTTPS publique, par exemple `https://app.example.com`   |
+| `MANIFEST_SIGNING_PRIVATE_KEY`      | conseillé  | clé privée Ed25519 en base64 (`npm run key:generate`)           |
+| `BLOB_READ_WRITE_TOKEN`             | conseillé  | injecté par Vercel Blob ; sinon les uploads utilisent le disque |
+| `NEXT_PUBLIC_ADSENSE_CLIENT`        | non        | identifiant `ca-pub-…` pour charger AdSense                     |
+| `NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL` | non        | URL HTTPS de l’installateur desktop affichée dans le dashboard  |
 
 Génère le secret avec un gestionnaire de secrets ou :
 
