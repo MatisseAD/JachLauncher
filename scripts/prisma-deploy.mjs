@@ -28,13 +28,34 @@ function parsePostgresUrl(value, variableName) {
 }
 
 async function main() {
-  const migrationVariable = process.env.DIRECT_URL
-    ? "DIRECT_URL"
-    : "DATABASE_URL";
-  const migrationUrl = parsePostgresUrl(
-    process.env[migrationVariable],
-    migrationVariable,
-  );
+  let migrationVariable;
+  let migrationValue;
+  if (process.env.DIRECT_URL) {
+    migrationVariable = "DIRECT_URL";
+    migrationValue = process.env.DIRECT_URL;
+  } else if (process.env.POSTGRES_URL_NON_POOLING) {
+    // Fourni automatiquement par l'intégration Supabase de Vercel.
+    migrationVariable = "POSTGRES_URL_NON_POOLING";
+    migrationValue = process.env.POSTGRES_URL_NON_POOLING;
+  } else {
+    migrationVariable = "DATABASE_URL";
+    migrationValue = process.env.DATABASE_URL;
+  }
+
+  let migrationUrl = parsePostgresUrl(migrationValue, migrationVariable);
+  if (
+    migrationVariable === "DATABASE_URL" &&
+    migrationUrl.hostname.endsWith(".pooler.supabase.com") &&
+    migrationUrl.port === "6543"
+  ) {
+    // Chez Supabase, le même endpoint partagé utilise le port 5432 en mode
+    // Session. Cela conserve la session nécessaire au verrou Prisma Migrate.
+    migrationUrl = new URL(migrationUrl);
+    migrationUrl.port = "5432";
+    migrationUrl.searchParams.delete("pgbouncer");
+    migrationUrl.searchParams.delete("connection_limit");
+    migrationVariable = "DATABASE_URL dérivée en mode Session";
+  }
   const port = migrationUrl.port || "5432";
 
   if (port === "6543") {

@@ -45,11 +45,11 @@ const npmRunner = resolveNpmRunner();
 
 const requiredEnvironmentVariables = [
   "DATABASE_URL",
-  "DIRECT_URL",
   "AUTH_SECRET",
   "NEXT_PUBLIC_APP_URL",
 ];
 const optionalEnvironmentVariables = [
+  "DIRECT_URL",
   "MANIFEST_SIGNING_PRIVATE_KEY",
   "BLOB_READ_WRITE_TOKEN",
   "NEXT_PUBLIC_ADSENSE_CLIENT",
@@ -181,6 +181,27 @@ function parseEnvironmentFile(filePath) {
 }
 
 function validateEnvironment(values, requireValues) {
+  if (!values.DIRECT_URL && values.DATABASE_URL) {
+    try {
+      const runtimeUrl = new URL(values.DATABASE_URL);
+      if (
+        runtimeUrl.hostname.endsWith(".pooler.supabase.com") &&
+        runtimeUrl.port === "6543"
+      ) {
+        const directUrl = new URL(runtimeUrl);
+        directUrl.port = "5432";
+        directUrl.searchParams.delete("pgbouncer");
+        directUrl.searchParams.delete("connection_limit");
+        values.DIRECT_URL = directUrl.toString();
+        console.log(
+          "DIRECT_URL absente : pooler Session Supabase 5432 dérivé automatiquement.",
+        );
+      }
+    } catch {
+      // L'erreur d'URL détaillée est produite ci-dessous.
+    }
+  }
+
   if (requireValues) {
     const missing = requiredEnvironmentVariables.filter(
       (name) => !values[name]?.trim(),
@@ -231,12 +252,23 @@ function validateEnvironment(values, requireValues) {
     const runtimeUrl = new URL(values.DATABASE_URL);
     if (
       runtimeUrl.hostname.endsWith(".pooler.supabase.com") &&
-      runtimeUrl.port === "6543" &&
-      runtimeUrl.searchParams.get("pgbouncer") !== "true"
+      runtimeUrl.port === "6543"
     ) {
-      throw new Error(
-        "Ajoute pgbouncer=true aux paramètres de DATABASE_URL pour le pooler transactionnel Supabase.",
-      );
+      let normalized = false;
+      if (runtimeUrl.searchParams.get("pgbouncer") !== "true") {
+        runtimeUrl.searchParams.set("pgbouncer", "true");
+        normalized = true;
+      }
+      if (!runtimeUrl.searchParams.has("connection_limit")) {
+        runtimeUrl.searchParams.set("connection_limit", "1");
+        normalized = true;
+      }
+      if (normalized) {
+        values.DATABASE_URL = runtimeUrl.toString();
+        console.log(
+          "DATABASE_URL Supabase normalisée pour le runtime serverless.",
+        );
+      }
     }
   }
 

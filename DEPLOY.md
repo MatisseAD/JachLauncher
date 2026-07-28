@@ -14,15 +14,15 @@ de bascule SQLite ni de `db push` pendant le build.
 
 ## 2. Variables d’environnement
 
-| Variable                       | Requise   | Description                                                     |
-| ------------------------------ | --------- | --------------------------------------------------------------- |
-| `DATABASE_URL`                 | oui       | URL PostgreSQL poolée utilisée par l’application                |
-| `DIRECT_URL`                   | oui       | URL PostgreSQL directe/session utilisée par `migrate deploy`    |
-| `AUTH_SECRET`                  | oui       | secret aléatoire d’au moins 32 caractères                       |
-| `NEXT_PUBLIC_APP_URL`          | oui       | origine HTTPS publique, par exemple `https://app.example.com`   |
-| `MANIFEST_SIGNING_PRIVATE_KEY` | conseillé | clé privée Ed25519 en base64 (`npm run key:generate`)           |
-| `BLOB_READ_WRITE_TOKEN`        | conseillé | injecté par Vercel Blob ; sinon les uploads utilisent le disque |
-| `NEXT_PUBLIC_ADSENSE_CLIENT`   | non       | identifiant `ca-pub-…` pour charger AdSense                     |
+| Variable                       | Requise    | Description                                                     |
+| ------------------------------ | ---------- | --------------------------------------------------------------- |
+| `DATABASE_URL`                 | oui        | URL PostgreSQL poolée utilisée par l’application                |
+| `DIRECT_URL`                   | conseillée | URL PostgreSQL directe/session utilisée par `migrate deploy`    |
+| `AUTH_SECRET`                  | oui        | secret aléatoire d’au moins 32 caractères                       |
+| `NEXT_PUBLIC_APP_URL`          | oui        | origine HTTPS publique, par exemple `https://app.example.com`   |
+| `MANIFEST_SIGNING_PRIVATE_KEY` | conseillé  | clé privée Ed25519 en base64 (`npm run key:generate`)           |
+| `BLOB_READ_WRITE_TOKEN`        | conseillé  | injecté par Vercel Blob ; sinon les uploads utilisent le disque |
+| `NEXT_PUBLIC_ADSENSE_CLIENT`   | non        | identifiant `ca-pub-…` pour charger AdSense                     |
 
 Génère le secret avec un gestionnaire de secrets ou :
 
@@ -51,6 +51,11 @@ le script de migration remplace temporairement cette valeur par `DIRECT_URL`.
 Une migration bloquée est interrompue après 120 secondes au lieu de suspendre
 indéfiniment le build.
 
+Si `DIRECT_URL` est absente, le build utilise
+`POSTGRES_URL_NON_POOLING` fourni par l’intégration Supabase de Vercel. En
+dernier recours, pour un `DATABASE_URL` Supabase en `6543`, il dérive
+automatiquement le même pooler en mode Session `5432`.
+
 Avec Supabase :
 
 - `DATABASE_URL` utilise le pooler **Transaction**, port `6543`, avec
@@ -59,6 +64,10 @@ Avec Supabase :
   si le réseau Vercel peut la joindre, ou le pooler **Session**
   `aws-…pooler.supabase.com:5432` ;
 - ne mets jamais le port `6543` dans `DIRECT_URL`.
+
+Le script de déploiement ajoute automatiquement `pgbouncer=true` et
+`connection_limit=1` à `DATABASE_URL` lorsqu’il reconnaît le pooler
+transactionnel Supabase.
 
 ## 4. Base de données
 
