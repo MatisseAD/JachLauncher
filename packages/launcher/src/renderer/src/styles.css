@@ -253,3 +253,56 @@ input:focus {
 .specs {
   margin-top: 8px;
 }
+/* Mise à jour de l'application : information discrète, jamais bloquante. */
+.desktop-update {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: min(350px, calc(100vw - 36px));
+  padding: 12px 14px;
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 13px;
+  color: #f5f1ff;
+  background: rgba(20, 14, 34, 0.9);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(18px);
+}
+
+.desktop-update-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: #a78bfa;
+  box-shadow: 0 0 16px #8b5cf6;
+}
+
+.desktop-update.ready .desktop-update-dot {
+  background: #34d399;
+  box-shadow: 0 0 16px #10b981;
+}
+
+.desktop-update.error .desktop-update-dot {
+  background: #fb7185;
+  box-shadow: 0 0 16px #e11d48;
+}
+
+.desktop-update strong,
+.desktop-update small {
+  display: block;
+}
+
+.desktop-update strong {
+  font-size: 12px;
+}
+
+.desktop-update small {
+  margin-top: 2px;
+  color: #b8accf;
+  font-size: 10px;
+  line-height: 1.45;
+}

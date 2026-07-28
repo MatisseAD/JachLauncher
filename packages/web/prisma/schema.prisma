@@ -13,8 +13,11 @@ datasource db {
 model User {
   id        String     @id @default(cuid())
   username  String     @unique
+  email     String?    @unique
+  avatarUrl String?
   password  String // hash bcrypt
   createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   launchers Launcher[]
 }
 
@@ -42,6 +45,18 @@ model Launcher {
   buttonStyle    String  @default("glow") // glow | flat | pixel | outline
   cardShape      String  @default("rounded") // rounded | sharp | pill
   menuPlacement  String  @default("left") // left | top
+  backgroundFit      String @default("cover") // cover | contain | fill
+  backgroundPosition String @default("center") // center | top | bottom | left | right
+  backgroundOverlay  Int    @default(48) // 0..90
+  backgroundBlur     Int    @default(0) // 0..20 px
+  panelOpacity       Int    @default(72) // 20..100
+  fontFamily         String @default("poppins") // poppins | inter | system | serif | pixel
+  cornerRadius       Int    @default(14) // 0..32 px
+  contentDensity     String @default("comfortable") // compact | comfortable | spacious
+  sidebarStyle       String @default("glass") // glass | solid | floating
+  logoShape          String @default("rounded") // square | rounded | circle
+  playButtonLabel    String @default("JOUER")
+  showServerStatus   Boolean @default(true)
   showNews       Boolean @default(true)
   showDiscord    Boolean @default(false)
   showWebsite    Boolean @default(false)

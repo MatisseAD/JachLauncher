@@ -6,29 +6,41 @@ import WizardEditor from "@/components/WizardEditor";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { MAX_LAUNCHERS_PER_USER } from "@/lib/launcher-limits";
+import { assetUrl } from "@/lib/asset";
+import { getLocale } from "@/i18n/server";
+import { getDashboardCopy } from "@/i18n/dashboard-content";
 
 export default async function NewLauncherPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  const launcherCount = await prisma.launcher.count({
-    where: { ownerId: session.userId },
-  });
+  const locale = await getLocale();
+  const copy = getDashboardCopy(locale).editor;
+  const [launcherCount, profile] = await Promise.all([
+    prisma.launcher.count({
+      where: { ownerId: session.userId },
+    }),
+    prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { username: true, avatarUrl: true },
+    }),
+  ]);
 
   return (
-    <DashboardShell username={session.username}>
+    <DashboardShell
+      username={profile?.username ?? session.username}
+      avatarUrl={assetUrl(profile?.avatarUrl)}
+    >
       <section className="editor-heading">
         <div>
           <Link href="/dashboard" className="back-link">
-            ← Retour au dashboard
+            ← {copy.back}
           </Link>
-          <span className="page-kicker">Assistant guidé</span>
-          <h1>Créons ton launcher</h1>
-          <p>
-            Avance à ton rythme : chaque étape est expliquée et enregistrée.
-          </p>
+          <span className="page-kicker">{copy.guided}</span>
+          <h1>{copy.createTitle}</h1>
+          <p>{copy.createIntro}</p>
         </div>
         <span className="editor-quota">
-          {launcherCount}/{MAX_LAUNCHERS_PER_USER} utilisés
+          {launcherCount}/{MAX_LAUNCHERS_PER_USER} {copy.used}
         </span>
       </section>
 
@@ -37,13 +49,12 @@ export default async function NewLauncherPage() {
           <span>
             <UiIcon name="layers" size={28} />
           </span>
-          <h2>Limite de launchers atteinte</h2>
+          <h2>{copy.limitTitle}</h2>
           <p>
-            Ton compte possède déjà {MAX_LAUNCHERS_PER_USER} launchers. Supprime
-            ou réutilise un projet existant avant d’en créer un autre.
+            {copy.limitText.replace("{max}", String(MAX_LAUNCHERS_PER_USER))}
           </p>
           <Link href="/dashboard" className="btn">
-            Revenir à mes launchers
+            {copy.backToLaunchers}
           </Link>
         </div>
       ) : (

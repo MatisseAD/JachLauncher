@@ -11,6 +11,7 @@ import type {
   LaunchResult,
   SavedLauncher,
   InstanceStatus,
+  DesktopUpdateState,
 } from "../shared-types/ipc";
 
 const api: JachApi = {
@@ -70,6 +71,11 @@ const api: JachApi = {
     const listener = (_e: unknown, line: string) => cb(line);
     ipcRenderer.on("launch:log", listener);
     return () => ipcRenderer.removeListener("launch:log", listener);
+  },
+  onUpdateState: (cb: (state: DesktopUpdateState) => void) => {
+    const listener = (_e: unknown, state: DesktopUpdateState) => cb(state);
+    ipcRenderer.on("update:state", listener);
+    return () => ipcRenderer.removeListener("update:state", listener);
   },
 };
 

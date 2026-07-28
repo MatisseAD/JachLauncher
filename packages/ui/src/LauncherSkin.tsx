@@ -124,7 +124,11 @@ export function LauncherSkin({
   const h = handlers ?? {};
   const settings = state.settings ?? DEFAULT_SETTINGS;
   const radius =
-    config.cardShape === "sharp" ? 3 : config.cardShape === "pill" ? 20 : 14;
+    config.cardShape === "sharp"
+      ? Math.min(config.cornerRadius, 4)
+      : config.cardShape === "pill"
+        ? Math.max(config.cornerRadius, 20)
+        : config.cornerRadius;
   const amb = config.ambiance ?? "none";
   const fxClass =
     amb === "snow" || amb === "rain"
@@ -139,10 +143,25 @@ export function LauncherSkin({
     ["--js" as string]: config.secondaryColor,
     ["--jt" as string]: config.textColor,
     ["--jradius" as string]: `${radius}px`,
+    ["--jpanel" as string]:
+      config.theme === "light"
+        ? `rgba(255, 255, 255, ${config.panelOpacity / 100})`
+        : `rgba(12, 17, 25, ${config.panelOpacity / 100})`,
+    ["--jpanel-2" as string]:
+      config.theme === "light"
+        ? `rgba(255, 255, 255, ${Math.min(1, (config.panelOpacity + 10) / 100)})`
+        : `rgba(20, 28, 40, ${Math.min(1, (config.panelOpacity + 8) / 100)})`,
   };
 
   const bgStyle: CSSProperties = config.backgroundUrl
-    ? { backgroundImage: `url(${config.backgroundUrl})` }
+    ? {
+        backgroundImage: `url(${config.backgroundUrl})`,
+        backgroundSize: config.backgroundFit,
+        backgroundPosition: config.backgroundPosition,
+        filter: config.backgroundBlur
+          ? `blur(${config.backgroundBlur}px)`
+          : undefined,
+      }
     : {
         background: `radial-gradient(700px 360px at 75% 0%, ${config.primaryColor}40, transparent 60%),
                      radial-gradient(520px 320px at 0% 100%, ${config.secondaryColor}30, transparent 60%),
@@ -175,10 +194,19 @@ export function LauncherSkin({
       data-style={config.visualStyle}
       data-btn={config.buttonStyle}
       data-menu={config.menuPlacement}
+      data-density={config.contentDensity}
+      data-sidebar={config.sidebarStyle}
+      data-logo={config.logoShape}
+      data-font={config.fontFamily}
       style={rootStyle}
     >
       <div className="js-bg" style={bgStyle} />
-      <div className="js-overlay" />
+      <div
+        className="js-overlay"
+        style={{
+          opacity: config.backgroundOverlay / 100,
+        }}
+      />
       <div className={`js-fx ${fxClass}`}>
         {Array.from({ length: 12 }).map((_, i) => {
           const c = ambColor(amb, i, config);
@@ -527,57 +555,59 @@ function Home({
 
       <div className="col-side">
         {/* Statut serveur enrichi */}
-        <div className="js-card">
-          <div className="js-section-title">Serveur</div>
-          <div className="js-status">
-            <span className={`js-dot ${srv?.online ? "on" : ""}`} />
-            <span style={{ fontWeight: 700 }}>
-              {maint
-                ? "Maintenance"
-                : srv?.loading
-                  ? "Vérification…"
-                  : srv?.online
-                    ? "En ligne"
-                    : "Hors ligne"}
-            </span>
-            {srv?.online && srv.pingMs != null && (
-              <span
+        {config.showServerStatus && (
+          <div className="js-card">
+            <div className="js-section-title">Serveur</div>
+            <div className="js-status">
+              <span className={`js-dot ${srv?.online ? "on" : ""}`} />
+              <span style={{ fontWeight: 700 }}>
+                {maint
+                  ? "Maintenance"
+                  : srv?.loading
+                    ? "Vérification…"
+                    : srv?.online
+                      ? "En ligne"
+                      : "Hors ligne"}
+              </span>
+              {srv?.online && srv.pingMs != null && (
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    color: "var(--jdim)",
+                    fontSize: 12,
+                  }}
+                >
+                  {srv.pingMs} ms
+                </span>
+              )}
+            </div>
+            {srv?.online && srv.players != null && (
+              <div style={{ marginTop: 8 }}>
+                <span className="js-players">{srv.players}</span>
+                <span style={{ color: "var(--jdim)" }}>
+                  {srv.maxPlayers ? ` / ${srv.maxPlayers}` : ""} joueurs
+                </span>
+              </div>
+            )}
+            {srv?.version && (
+              <div style={{ marginTop: 6, color: "var(--jdim)", fontSize: 12 }}>
+                {srv.version}
+              </div>
+            )}
+            {srv?.motd && (
+              <div
                 style={{
-                  marginLeft: "auto",
-                  color: "var(--jdim)",
+                  marginTop: 6,
                   fontSize: 12,
+                  fontStyle: "italic",
+                  opacity: 0.85,
                 }}
               >
-                {srv.pingMs} ms
-              </span>
+                {srv.motd}
+              </div>
             )}
           </div>
-          {srv?.online && srv.players != null && (
-            <div style={{ marginTop: 8 }}>
-              <span className="js-players">{srv.players}</span>
-              <span style={{ color: "var(--jdim)" }}>
-                {srv.maxPlayers ? ` / ${srv.maxPlayers}` : ""} joueurs
-              </span>
-            </div>
-          )}
-          {srv?.version && (
-            <div style={{ marginTop: 6, color: "var(--jdim)", fontSize: 12 }}>
-              {srv.version}
-            </div>
-          )}
-          {srv?.motd && (
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 12,
-                fontStyle: "italic",
-                opacity: 0.85,
-              }}
-            >
-              {srv.motd}
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Compte + skin joueur */}
         <div className="js-card">
@@ -1442,6 +1472,9 @@ function BottomBar({
   let label = info.label;
   let cls = info.cls;
   let disabled = info.disabled;
+  if (state.playState === "ready" && !maint && !noAccount) {
+    label = config.playButtonLabel || "JOUER";
+  }
   if (maint) {
     label = "Serveur en maintenance";
     cls = "offline";

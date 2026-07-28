@@ -5,7 +5,7 @@ import { createSession, verifyPassword } from "@/lib/auth";
 import { consumeRateLimit } from "@/lib/rate-limit";
 
 const Body = z.object({
-  username: z.string().min(1).max(32),
+  username: z.string().min(1).max(254),
   password: z.string().min(1).max(128),
 });
 
@@ -23,7 +23,12 @@ export async function POST(req: Request) {
   const { username, password } = parsed.data;
 
   try {
-    const user = await prisma.user.findUnique({ where: { username } });
+    const normalized = username.trim();
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: normalized }, { email: normalized.toLowerCase() }],
+      },
+    });
     const hash =
       user?.password ??
       "$2b$10$BfF.1MWtfHYgmC2JcN5PzuVLRE1kwATJekMG4uZ23TwkbZuv3ya4u";

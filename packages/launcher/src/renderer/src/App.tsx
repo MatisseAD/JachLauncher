@@ -23,6 +23,7 @@ import {
   type SavedLauncher,
   type InstanceStatus,
   type LoadManifestResult,
+  type DesktopUpdateState,
 } from "../../shared-types/ipc";
 
 function toPlayState(
@@ -99,6 +100,9 @@ export default function App() {
     useState<InstanceStatus>("first-install");
   const [adding, setAdding] = useState(false);
   const [advancedSource, setAdvancedSource] = useState(false);
+  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState>({
+    status: "idle",
+  });
   const logsRef = useRef<string[]>([]);
 
   function notify(kind: SkinNotification["kind"], message: string) {
@@ -131,9 +135,11 @@ export default function App() {
     const offL = window.jach.onLog((line) => {
       logsRef.current = [...logsRef.current.slice(-400), line];
     });
+    const offU = window.jach.onUpdateState(setDesktopUpdate);
     return () => {
       offP();
       offL();
+      offU();
     };
   }, []);
 
@@ -523,6 +529,30 @@ export default function App() {
   return (
     <>
       {skin}
+      {desktopUpdate.status !== "idle" &&
+        desktopUpdate.status !== "checking" && (
+          <div className={`desktop-update ${desktopUpdate.status}`}>
+            <span className="desktop-update-dot" />
+            <div>
+              <strong>
+                {desktopUpdate.status === "ready"
+                  ? `Mise à jour ${desktopUpdate.version ?? ""} prête`
+                  : desktopUpdate.status === "downloading"
+                    ? `Mise à jour en cours · ${desktopUpdate.percent ?? 0}%`
+                    : desktopUpdate.status === "available"
+                      ? `Nouvelle version ${desktopUpdate.version ?? ""}`
+                      : "Mise à jour temporairement indisponible"}
+              </strong>
+              <small>
+                {desktopUpdate.status === "ready"
+                  ? "Elle s’installera automatiquement à la fermeture."
+                  : desktopUpdate.status === "error"
+                    ? desktopUpdate.message
+                    : "Téléchargement sécurisé en arrière-plan."}
+              </small>
+            </div>
+          </div>
+        )}
       {adding && (
         <div
           style={

@@ -53,6 +53,24 @@ const LauncherInputBaseSchema = z.object({
   buttonStyle: z.enum(["glow", "flat", "pixel", "outline"]).default("glow"),
   cardShape: z.enum(["rounded", "sharp", "pill"]).default("rounded"),
   menuPlacement: z.enum(["left", "top"]).default("left"),
+  backgroundFit: z.enum(["cover", "contain", "fill"]).default("cover"),
+  backgroundPosition: z
+    .enum(["center", "top", "bottom", "left", "right"])
+    .default("center"),
+  backgroundOverlay: z.number().int().min(0).max(90).default(48),
+  backgroundBlur: z.number().int().min(0).max(20).default(0),
+  panelOpacity: z.number().int().min(20).max(100).default(72),
+  fontFamily: z
+    .enum(["poppins", "inter", "system", "serif", "pixel"])
+    .default("poppins"),
+  cornerRadius: z.number().int().min(0).max(32).default(14),
+  contentDensity: z
+    .enum(["compact", "comfortable", "spacious"])
+    .default("comfortable"),
+  sidebarStyle: z.enum(["glass", "solid", "floating"]).default("glass"),
+  logoShape: z.enum(["square", "rounded", "circle"]).default("rounded"),
+  playButtonLabel: z.string().trim().min(1).max(24).default("JOUER"),
+  showServerStatus: z.boolean().default(true),
   showNews: z.boolean().default(true),
   showDiscord: z.boolean().default(false),
   showWebsite: z.boolean().default(false),

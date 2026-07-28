@@ -8,6 +8,9 @@ import UiIcon from "@/components/UiIcon";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { MAX_LAUNCHERS_PER_USER } from "@/lib/launcher-limits";
+import { getLocale } from "@/i18n/server";
+import { getDashboardCopy } from "@/i18n/dashboard-content";
+import { assetUrl } from "@/lib/asset";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +28,8 @@ function safeArrayLength(value: string) {
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const locale = await getLocale();
+  const copy = getDashboardCopy(locale).page;
 
   const today = new Date();
   const startDay = new Date(
@@ -35,34 +40,40 @@ export default async function DashboardPage() {
     ),
   );
 
-  const rows = await prisma.launcher.findMany({
-    where: { ownerId: session.userId },
-    orderBy: [{ favorite: "desc" }, { updatedAt: "desc" }],
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      description: true,
-      status: true,
-      favorite: true,
-      logoUrl: true,
-      backgroundUrl: true,
-      primaryColor: true,
-      secondaryColor: true,
-      mcVersion: true,
-      loader: true,
-      launcherType: true,
-      mods: true,
-      resourcepacks: true,
-      shaderpacks: true,
-      news: true,
-      updatedAt: true,
-      dailyMetrics: {
-        where: { day: { gte: startDay } },
-        select: { day: true, manifestLoads: true },
+  const [rows, profile] = await Promise.all([
+    prisma.launcher.findMany({
+      where: { ownerId: session.userId },
+      orderBy: [{ favorite: "desc" }, { updatedAt: "desc" }],
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        description: true,
+        status: true,
+        favorite: true,
+        logoUrl: true,
+        backgroundUrl: true,
+        primaryColor: true,
+        secondaryColor: true,
+        mcVersion: true,
+        loader: true,
+        launcherType: true,
+        mods: true,
+        resourcepacks: true,
+        shaderpacks: true,
+        news: true,
+        updatedAt: true,
+        dailyMetrics: {
+          where: { day: { gte: startDay } },
+          select: { day: true, manifestLoads: true },
+        },
       },
-    },
-  });
+    }),
+    prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { username: true, avatarUrl: true },
+    }),
+  ]);
 
   const launchers: LauncherSummary[] = rows.map((launcher) => ({
     ...launcher,
@@ -92,7 +103,7 @@ export default async function DashboardPage() {
       0,
     );
     return {
-      label: day.toLocaleDateString("fr-FR", { weekday: "short" }).slice(0, 2),
+      label: day.toLocaleDateString(locale, { weekday: "short" }).slice(0, 2),
       value,
     };
   });
@@ -105,30 +116,29 @@ export default async function DashboardPage() {
   const downloadUrl = process.env.NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL;
 
   return (
-    <DashboardShell username={session.username}>
+    <DashboardShell
+      username={profile?.username ?? session.username}
+      avatarUrl={assetUrl(profile?.avatarUrl)}
+    >
       <section className="dashboard-heading">
         <div>
-          <span className="page-kicker">Vue d’ensemble</span>
+          <span className="page-kicker">{copy.overview}</span>
           <h1>
-            Bonjour
-            <span className="dashboard-username">{session.username}</span>
+            {copy.hello}
+            <span className="dashboard-username">
+              {profile?.username ?? session.username}
+            </span>
           </h1>
-          <p>
-            Pilote tes launchers, suis leur utilisation et publie tes mises à
-            jour depuis un seul espace.
-          </p>
+          <p>{copy.intro}</p>
         </div>
         {canCreate ? (
           <Link href="/dashboard/new" className="btn">
             <UiIcon name="plus" size={18} />
-            Nouveau launcher
+            {copy.newLauncher}
           </Link>
         ) : (
-          <span
-            className="btn is-disabled"
-            title="Limite de launchers atteinte"
-          >
-            Limite atteinte
+          <span className="btn is-disabled" title={copy.limit}>
+            {copy.limit}
           </span>
         )}
       </section>
@@ -139,9 +149,11 @@ export default async function DashboardPage() {
             <UiIcon name="layers" />
           </span>
           <div>
-            <span className="metric-label">Launchers</span>
+            <span className="metric-label">{copy.launchers}</span>
             <strong>{launchers.length}</strong>
-            <small>sur {MAX_LAUNCHERS_PER_USER} disponibles</small>
+            <small>
+              {MAX_LAUNCHERS_PER_USER} {copy.available}
+            </small>
           </div>
         </article>
         <article className="metric-card">
@@ -149,10 +161,10 @@ export default async function DashboardPage() {
             <UiIcon name="server" />
           </span>
           <div>
-            <span className="metric-label">En production</span>
+            <span className="metric-label">{copy.production}</span>
             <strong>{published}</strong>
             <small>
-              {drafts} brouillon{drafts > 1 ? "s" : ""}
+              {drafts} {copy.drafts}
             </small>
           </div>
         </article>
@@ -161,9 +173,9 @@ export default async function DashboardPage() {
             <UiIcon name="activity" />
           </span>
           <div>
-            <span className="metric-label">Chargements</span>
+            <span className="metric-label">{copy.loads}</span>
             <strong>{totalLoads}</strong>
-            <small>via l’application · 7 jours</small>
+            <small>{copy.appSevenDays}</small>
           </div>
         </article>
         <article className="metric-card">
@@ -171,9 +183,9 @@ export default async function DashboardPage() {
             <UiIcon name="download" />
           </span>
           <div>
-            <span className="metric-label">Contenus distribués</span>
+            <span className="metric-label">{copy.content}</span>
             <strong>{contentFiles}</strong>
-            <small>mods, packs et shaders</small>
+            <small>{copy.contentKinds}</small>
           </div>
         </article>
       </section>
@@ -182,17 +194,14 @@ export default async function DashboardPage() {
         <article className="panel activity-panel">
           <div className="panel-head">
             <div>
-              <span className="panel-eyebrow">Activité joueurs</span>
-              <h2>Chargements du launcher</h2>
+              <span className="panel-eyebrow">{copy.playerActivity}</span>
+              <h2>{copy.launcherLoads}</h2>
             </div>
-            <span className="trend-badge">7 derniers jours</span>
+            <span className="trend-badge">{copy.sevenDays}</span>
           </div>
           <div className="chart-summary">
             <strong>{totalLoads}</strong>
-            <span>
-              ouverture{totalLoads > 1 ? "s" : ""} de configuration depuis
-              l’application desktop
-            </span>
+            <span>{copy.configOpenings}</span>
           </div>
           <div className="activity-chart">
             {activity.map((day) => (
@@ -211,15 +220,15 @@ export default async function DashboardPage() {
           </div>
           <p className="privacy-note">
             <UiIcon name="shield" size={15} />
-            Mesure agrégée, sans adresse IP ni identifiant joueur.
+            {copy.privateMetric}
           </p>
         </article>
 
         <article className="panel quota-panel">
           <div className="panel-head">
             <div>
-              <span className="panel-eyebrow">Capacité du compte</span>
-              <h2>Launchers disponibles</h2>
+              <span className="panel-eyebrow">{copy.capacity}</span>
+              <h2>{copy.slots}</h2>
             </div>
             <span className="quota-value">
               {launchers.length}/{MAX_LAUNCHERS_PER_USER}
@@ -233,15 +242,11 @@ export default async function DashboardPage() {
               <strong>
                 {Math.max(MAX_LAUNCHERS_PER_USER - launchers.length, 0)}
               </strong>
-              <span>
-                place{launchers.length < 2 ? "s" : ""} libre
-                {launchers.length < 2 ? "s" : ""}
-              </span>
+              <span>{copy.freeSlots}</span>
             </div>
           </div>
           <p>
-            La limite actuelle est fixée à {MAX_LAUNCHERS_PER_USER} launchers
-            par créateur pour garantir une infrastructure stable.
+            {copy.quotaText} ({MAX_LAUNCHERS_PER_USER})
           </p>
         </article>
       </section>
@@ -249,11 +254,11 @@ export default async function DashboardPage() {
       <section className="launchers-section">
         <div className="section-title-row">
           <div>
-            <span className="page-kicker">Tes projets</span>
-            <h2>Mes launchers</h2>
+            <span className="page-kicker">{copy.projects}</span>
+            <h2>{copy.myLaunchers}</h2>
           </div>
           <span>
-            {launchers.length} projet{launchers.length > 1 ? "s" : ""}
+            {launchers.length} {copy.project}
           </span>
         </div>
 
@@ -262,14 +267,11 @@ export default async function DashboardPage() {
             <span className="empty-icon">
               <UiIcon name="rocket" size={30} />
             </span>
-            <h3>Crée ton premier launcher</h3>
-            <p>
-              Choisis son identité, connecte ton serveur et publie une
-              expérience prête à jouer en quelques minutes.
-            </p>
+            <h3>{copy.emptyTitle}</h3>
+            <p>{copy.emptyText}</p>
             <Link href="/dashboard/new" className="btn">
               <UiIcon name="plus" size={17} />
-              Démarrer la création
+              {copy.start}
             </Link>
           </div>
         ) : (
@@ -292,34 +294,30 @@ export default async function DashboardPage() {
             <i />
             <div className="download-window-content">
               <UiIcon name="rocket" size={32} />
-              <span>Prêt à jouer</span>
+              <span>{copy.ready}</span>
             </div>
           </div>
         </div>
         <div className="download-copy">
-          <span className="page-kicker">Application joueurs</span>
-          <h2>Télécharger YourLauncher</h2>
-          <p>
-            Tes joueurs installent une seule application, saisissent le code de
-            ton launcher publié et retrouvent automatiquement la bonne version,
-            les mods et les ressources.
-          </p>
+          <span className="page-kicker">{copy.playerApp}</span>
+          <h2>{copy.downloadTitle}</h2>
+          <p>{copy.downloadText}</p>
           <ol className="download-steps">
             <li>
-              <span>1</span> Télécharge et installe l’application Windows.
+              <span>1</span> {copy.downloadSteps[0]}
             </li>
             <li>
-              <span>2</span> Connecte ton compte Minecraft.
+              <span>2</span> {copy.downloadSteps[1]}
             </li>
             <li>
-              <span>3</span> Entre le code affiché sur ton launcher publié.
+              <span>3</span> {copy.downloadSteps[2]}
             </li>
           </ol>
           <div className="row wrap">
             {downloadUrl ? (
               <a className="btn" href={downloadUrl}>
                 <UiIcon name="download" size={18} />
-                Télécharger pour Windows
+                {copy.download}
               </a>
             ) : (
               <span
@@ -327,11 +325,11 @@ export default async function DashboardPage() {
                 title="Configure NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL pour publier le build."
               >
                 <UiIcon name="windows" size={18} />
-                Build Windows bientôt disponible
+                {copy.soon}
               </span>
             )}
             <Link className="text-link" href="/help#installation">
-              Lire le guide complet <UiIcon name="arrow" size={15} />
+              {copy.fullGuide} <UiIcon name="arrow" size={15} />
             </Link>
           </div>
         </div>

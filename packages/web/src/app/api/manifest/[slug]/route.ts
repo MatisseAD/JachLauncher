@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { buildManifest } from "@/lib/manifest";
+import { buildManifest, signManifest } from "@/lib/manifest";
+import { buildDemoManifest, getDemoLauncher } from "@/lib/demo-launchers";
 
 type Ctx = { params: Promise<{ slug: string }> };
 
@@ -12,7 +13,8 @@ export async function GET(req: Request, { params }: Ctx) {
   const launcher = await prisma.launcher
     .findUnique({ where: { slug } })
     .catch(() => null);
-  if (!launcher || launcher.status !== "published") {
+  const demo = getDemoLauncher(slug);
+  if ((!launcher || launcher.status !== "published") && !demo) {
     return NextResponse.json(
       { error: "Aucun launcher publié avec ce code" },
       { status: 404, headers: corsHeaders() },
@@ -24,8 +26,15 @@ export async function GET(req: Request, { params }: Ctx) {
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || reqUrl.origin;
   const download = reqUrl.searchParams.get("download") === "1";
   try {
-    const manifest = buildManifest(launcher, origin);
-    if (!download && req.headers.get("x-yourlauncher-client") === "desktop") {
+    const manifest =
+      launcher && launcher.status === "published"
+        ? buildManifest(launcher, origin)
+        : signManifest(buildDemoManifest(demo!, origin));
+    if (
+      launcher &&
+      !download &&
+      req.headers.get("x-yourlauncher-client") === "desktop"
+    ) {
       await recordDesktopLoad(launcher.id);
     }
     const headers = corsHeaders();

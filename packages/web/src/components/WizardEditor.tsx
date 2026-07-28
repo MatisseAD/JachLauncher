@@ -21,6 +21,9 @@ import AssetUpload from "./editor/AssetUpload";
 import FileListEditor from "./editor/FileListEditor";
 import NewsEditor from "./editor/NewsEditor";
 import { fetchReleaseVersions, FALLBACK_VERSIONS } from "@/lib/mc-versions";
+import { useI18n } from "@/i18n/I18nProvider";
+import { getGuideContent } from "@/i18n/guide-content";
+import { getWizardCopy } from "@/i18n/wizard-content";
 
 const STEPS: {
   short: string;
@@ -233,6 +236,15 @@ export default function WizardEditor({
   mode: "create" | "edit";
   initial?: LauncherFormData;
 }) {
+  const { locale } = useI18n();
+  const wizardCopy = getWizardCopy(locale);
+  const guideCopy = getGuideContent(locale);
+  const localizedSteps = STEPS.map((item, index) => ({
+    ...item,
+    short: wizardCopy.shorts[index] ?? item.short,
+    title: guideCopy.steps[index]?.title ?? item.title,
+    description: guideCopy.steps[index]?.desc ?? item.description,
+  }));
   const [data, setData] = useState<LauncherFormData>(initial ?? DEFAULT_FORM);
   const [step, setStep] = useState(0);
   const [unlockedStep, setUnlockedStep] = useState(
@@ -391,7 +403,7 @@ export default function WizardEditor({
     typeof window !== "undefined" && data.slug
       ? `${window.location.origin}/api/manifest/${data.slug}`
       : "";
-  const currentStep = STEPS[step];
+  const currentStep = localizedSteps[step];
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
 
   function showStep(index: number) {
@@ -425,14 +437,14 @@ export default function WizardEditor({
       <aside className="wizard-rail">
         <div className="wizard-progress-copy">
           <span>
-            Étape {step + 1} sur {STEPS.length}
+            {wizardCopy.step} {step + 1} {wizardCopy.of} {STEPS.length}
           </span>
           <strong>{progress}%</strong>
         </div>
         <div
           className="wizard-progress-track"
           role="progressbar"
-          aria-label="Progression de la configuration"
+          aria-label={wizardCopy.progressLabel}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={progress}
@@ -440,8 +452,8 @@ export default function WizardEditor({
           <span style={{ width: `${progress}%` }} />
         </div>
 
-        <nav className="wizard-steps" aria-label="Étapes de configuration">
-          {STEPS.map((item, index) => {
+        <nav className="wizard-steps" aria-label={wizardCopy.stepsLabel}>
+          {localizedSteps.map((item, index) => {
             const active = index === step;
             const done = index < step;
             const locked = index > unlockedStep;
@@ -462,7 +474,9 @@ export default function WizardEditor({
                   )}
                 </span>
                 <span>
-                  <small>Étape {index + 1}</small>
+                  <small>
+                    {wizardCopy.step} {index + 1}
+                  </small>
                   <strong>{item.short}</strong>
                 </span>
               </button>
@@ -472,9 +486,7 @@ export default function WizardEditor({
 
         <div className="wizard-reassurance">
           <UiIcon name="shield" size={17} />
-          <span>
-            Tout est enregistré automatiquement dès que ton projet est créé.
-          </span>
+          <span>{wizardCopy.reassurance}</span>
         </div>
       </aside>
 
@@ -482,7 +494,7 @@ export default function WizardEditor({
         <header className="wizard-stage-heading">
           <div>
             <span className="page-kicker">
-              Étape {step + 1} · {currentStep.short}
+              {wizardCopy.step} {step + 1} · {currentStep.short}
             </span>
             <h2>{currentStep.title}</h2>
             <p>{currentStep.description}</p>
@@ -492,7 +504,7 @@ export default function WizardEditor({
             className="btn ghost sm wizard-preview-toggle"
             onClick={() => setPreviewOpen((open) => !open)}
           >
-            {previewOpen ? "Masquer l’aperçu" : "Voir l’aperçu"}
+            {previewOpen ? wizardCopy.hidePreview : wizardCopy.showPreview}
           </button>
         </header>
 
@@ -536,19 +548,19 @@ export default function WizardEditor({
             disabled={step === 0}
             onClick={() => showStep(Math.max(0, step - 1))}
           >
-            ← Précédent
+            ← {wizardCopy.previous}
           </button>
 
           <div className="wizard-navigation-end">
-            <AutosaveIndicator save={save} error="" />
+            <AutosaveIndicator save={save} error="" copy={wizardCopy} />
             {step < STEPS.length - 1 ? (
               <button type="button" className="btn" onClick={goNext}>
-                Continuer
+                {wizardCopy.continue}
                 <UiIcon name="arrow" size={17} />
               </button>
             ) : (
               <Link className="btn ghost" href="/dashboard">
-                Revenir au dashboard
+                {wizardCopy.dashboard}
               </Link>
             )}
           </div>
@@ -557,12 +569,12 @@ export default function WizardEditor({
 
       <aside
         className={`wizard-preview ${previewOpen ? "is-open" : ""}`}
-        aria-label="Aperçu en direct"
+        aria-label={wizardCopy.livePreview}
       >
         <div className="wizard-preview-heading">
           <div>
             <span className="status-dot" />
-            <strong>Aperçu en direct</strong>
+            <strong>{wizardCopy.livePreview}</strong>
           </div>
           {data.id && (
             <Link
@@ -570,40 +582,43 @@ export default function WizardEditor({
               href={`/preview/${data.slug}`}
               target="_blank"
             >
-              Plein écran
+              {wizardCopy.fullscreen}
               <UiIcon name="external" size={14} />
             </Link>
           )}
         </div>
         <LauncherPreview data={data} />
-        <p>
-          Le rendu se met à jour immédiatement. C’est cette interface que tes
-          joueurs utiliseront.
-        </p>
+        <p>{wizardCopy.previewText}</p>
       </aside>
     </div>
   );
 }
 
 /* =========================== Indicateur autosave =========================== */
-function AutosaveIndicator({ save, error }: { save: string; error: string }) {
+function AutosaveIndicator({
+  save,
+  error,
+  copy,
+}: {
+  save: string;
+  error: string;
+  copy: ReturnType<typeof getWizardCopy>;
+}) {
   if (save === "error")
-    return <span className="error">⚠ {error || "Erreur de sauvegarde"}</span>;
+    return <span className="error">⚠ {error || copy.saveError}</span>;
   if (save === "saving")
     return (
       <span className="autosave saving">
-        <span className="dot" /> Sauvegarde…
+        <span className="dot" /> {copy.saving}
       </span>
     );
   if (save === "saved")
     return (
       <span className="autosave">
-        <span className="dot" /> Enregistré
+        <span className="dot" /> {copy.saved}
       </span>
     );
-  return (
-    <span className="autosave faint">Modifications auto-sauvegardées</span>
-  );
+  return <span className="autosave faint">{copy.autosaved}</span>;
 }
 
 /* =============================== Étape 1 =============================== */
@@ -747,6 +762,114 @@ function StepAppearance({ data, set }: StepProps) {
         />
       </div>
 
+      <div className="customization-block">
+        <div className="customization-heading">
+          <div>
+            <strong>Lisibilité du fond</strong>
+            <span>
+              Ajuste le cadrage et la profondeur sans modifier ton image.
+            </span>
+          </div>
+          <span className="pill">
+            {data.backgroundOverlay}% d’assombrissement
+          </span>
+        </div>
+        <div className="grid cols-2">
+          <div className="field">
+            <label>Recadrage</label>
+            <select
+              value={data.backgroundFit}
+              onChange={(event) =>
+                set(
+                  "backgroundFit",
+                  event.target.value as LauncherFormData["backgroundFit"],
+                )
+              }
+            >
+              <option value="cover">Remplir sans déformer</option>
+              <option value="contain">Afficher l’image entière</option>
+              <option value="fill">Étirer dans la fenêtre</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Point focal</label>
+            <select
+              value={data.backgroundPosition}
+              onChange={(event) =>
+                set(
+                  "backgroundPosition",
+                  event.target.value as LauncherFormData["backgroundPosition"],
+                )
+              }
+            >
+              <option value="center">Centre</option>
+              <option value="top">Haut</option>
+              <option value="bottom">Bas</option>
+              <option value="left">Gauche</option>
+              <option value="right">Droite</option>
+            </select>
+          </div>
+        </div>
+        <div className="range-grid">
+          <label className="range-field">
+            <span>
+              Assombrissement <strong>{data.backgroundOverlay}%</strong>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={90}
+              value={data.backgroundOverlay}
+              onChange={(event) =>
+                set("backgroundOverlay", Number(event.target.value))
+              }
+            />
+          </label>
+          <label className="range-field">
+            <span>
+              Flou du fond <strong>{data.backgroundBlur}px</strong>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={20}
+              value={data.backgroundBlur}
+              onChange={(event) =>
+                set("backgroundBlur", Number(event.target.value))
+              }
+            />
+          </label>
+          <label className="range-field">
+            <span>
+              Opacité des panneaux <strong>{data.panelOpacity}%</strong>
+            </span>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              value={data.panelOpacity}
+              onChange={(event) =>
+                set("panelOpacity", Number(event.target.value))
+              }
+            />
+          </label>
+          <label className="range-field">
+            <span>
+              Coins des cartes <strong>{data.cornerRadius}px</strong>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={32}
+              value={data.cornerRadius}
+              onChange={(event) =>
+                set("cornerRadius", Number(event.target.value))
+              }
+            />
+          </label>
+        </div>
+      </div>
+
       <div className="field">
         <label>Style visuel</label>
         <div className="choice-grid visual-choice-grid">
@@ -854,6 +977,24 @@ function StepAppearance({ data, set }: StepProps) {
             <option value="top">En haut</option>
           </select>
         </div>
+        <div className="field">
+          <label>Police du launcher</label>
+          <select
+            value={data.fontFamily}
+            onChange={(event) =>
+              set(
+                "fontFamily",
+                event.target.value as LauncherFormData["fontFamily"],
+              )
+            }
+          >
+            <option value="poppins">Poppins</option>
+            <option value="inter">Inter</option>
+            <option value="system">Système</option>
+            <option value="serif">Serif fantasy</option>
+            <option value="pixel">Pixel</option>
+          </select>
+        </div>
       </div>
 
       <div className="grid cols-2">
@@ -869,6 +1010,81 @@ function StepAppearance({ data, set }: StepProps) {
             <option value="light">Clair</option>
           </select>
         </div>
+        <div className="field">
+          <label>Densité de l’interface</label>
+          <select
+            value={data.contentDensity}
+            onChange={(event) =>
+              set(
+                "contentDensity",
+                event.target.value as LauncherFormData["contentDensity"],
+              )
+            }
+          >
+            <option value="compact">Compacte</option>
+            <option value="comfortable">Confortable</option>
+            <option value="spacious">Aérée</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="grid cols-2">
+        <div className="field">
+          <label>Style du menu</label>
+          <select
+            value={data.sidebarStyle}
+            onChange={(event) =>
+              set(
+                "sidebarStyle",
+                event.target.value as LauncherFormData["sidebarStyle"],
+              )
+            }
+          >
+            <option value="glass">Verre dépoli</option>
+            <option value="solid">Plein</option>
+            <option value="floating">Flottant</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Forme du logo</label>
+          <select
+            value={data.logoShape}
+            onChange={(event) =>
+              set(
+                "logoShape",
+                event.target.value as LauncherFormData["logoShape"],
+              )
+            }
+          >
+            <option value="rounded">Arrondi</option>
+            <option value="square">Carré</option>
+            <option value="circle">Cercle</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="grid cols-2">
+        <div className="field">
+          <label htmlFor="play-button-label">Texte du bouton principal</label>
+          <input
+            id="play-button-label"
+            maxLength={24}
+            value={data.playButtonLabel}
+            placeholder="JOUER"
+            onChange={(event) => set("playButtonLabel", event.target.value)}
+          />
+        </div>
+        <label className="switch-row customization-switch">
+          <input
+            type="checkbox"
+            checked={data.showServerStatus}
+            onChange={(event) => set("showServerStatus", event.target.checked)}
+          />
+          <span>
+            <strong>Afficher l’état du serveur</strong>
+            <small>Joueurs, latence, version et message du jour.</small>
+          </span>
+        </label>
       </div>
     </>
   );

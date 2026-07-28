@@ -92,6 +92,19 @@ export interface LaunchProgress {
   percent: number | null;
 }
 
+export type DesktopUpdateStatus =
+  "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+
+/** État du téléchargement de l'application elle-même. */
+export interface DesktopUpdateState {
+  status: DesktopUpdateStatus;
+  version?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  message?: string;
+}
+
 export interface LoadManifestResult {
   ok: boolean;
   manifest?: LauncherManifest;
@@ -152,6 +165,7 @@ export interface JachApi {
   toggleFullscreen(): void;
   onProgress(cb: (p: LaunchProgress) => void): () => void;
   onLog(cb: (line: string) => void): () => void;
+  onUpdateState(cb: (state: DesktopUpdateState) => void): () => void;
 }
 
 declare global {

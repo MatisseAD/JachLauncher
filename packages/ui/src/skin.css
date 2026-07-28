@@ -40,6 +40,23 @@
   font-size: 11px;
   --jradius: 2px;
 }
+.jach-skin[data-font="inter"] {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.jach-skin[data-font="system"] {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+.jach-skin[data-font="serif"] {
+  font-family: Georgia, "Times New Roman", serif;
+}
+.jach-skin[data-font="pixel"] {
+  font-family: "Press Start 2P", ui-monospace, "Courier New", monospace;
+  font-size: 11px;
+}
 
 .jach-skin * {
   box-sizing: border-box;
@@ -58,18 +75,10 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(
-    180deg,
-    rgba(5, 8, 12, 0.45),
-    rgba(5, 8, 12, 0.9)
-  );
+  background: linear-gradient(180deg, #05080c 0%, #05080c 100%);
 }
 .is-light .js-overlay {
-  background: linear-gradient(
-    180deg,
-    rgba(245, 247, 250, 0.4),
-    rgba(240, 242, 246, 0.86)
-  );
+  background: linear-gradient(180deg, #f5f7fa 0%, #f0f2f6 100%);
 }
 .js-fx {
   position: absolute;
@@ -174,6 +183,15 @@
   border-radius: var(--jradius);
   backdrop-filter: blur(10px);
 }
+.jach-skin[data-sidebar="solid"] .js-sidebar {
+  backdrop-filter: none;
+  background: color-mix(in srgb, var(--jpanel) 92%, #080b12 8%);
+}
+.jach-skin[data-sidebar="floating"] .js-sidebar {
+  margin: 8px 0 8px 8px;
+  border-color: color-mix(in srgb, var(--jp) 34%, var(--jborder));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
 .jach-skin[data-menu="top"] .js-sidebar {
   width: 100%;
   flex-direction: row;
@@ -198,6 +216,35 @@
   object-fit: cover;
   flex: none;
   background: linear-gradient(120deg, var(--jp), var(--js));
+}
+.jach-skin[data-logo="square"] .js-logo img,
+.jach-skin[data-logo="square"] .js-logo .ph {
+  border-radius: 2px;
+}
+.jach-skin[data-logo="circle"] .js-logo img,
+.jach-skin[data-logo="circle"] .js-logo .ph {
+  border-radius: 50%;
+}
+
+.jach-skin[data-density="compact"] .js-body {
+  padding: 0 10px 10px;
+  gap: 10px;
+}
+.jach-skin[data-density="compact"] .js-card {
+  padding: 10px;
+}
+.jach-skin[data-density="compact"] .js-nav {
+  padding: 7px 10px;
+}
+.jach-skin[data-density="spacious"] .js-body {
+  padding: 4px 22px 22px;
+  gap: 22px;
+}
+.jach-skin[data-density="spacious"] .js-card {
+  padding: 18px;
+}
+.jach-skin[data-density="spacious"] .js-nav {
+  padding: 13px 14px;
 }
 .js-logo .nm {
   font-weight: 800;

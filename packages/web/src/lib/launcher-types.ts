@@ -16,6 +16,12 @@ export type Theme = "dark" | "light";
 export type ButtonStyle = "glow" | "flat" | "pixel" | "outline";
 export type CardShape = "rounded" | "sharp" | "pill";
 export type MenuPlacement = "left" | "top";
+export type BackgroundFit = "cover" | "contain" | "fill";
+export type BackgroundPosition = "center" | "top" | "bottom" | "left" | "right";
+export type LauncherFont = "poppins" | "inter" | "system" | "serif" | "pixel";
+export type ContentDensity = "compact" | "comfortable" | "spacious";
+export type SidebarStyle = "glass" | "solid" | "floating";
+export type LogoShape = "square" | "rounded" | "circle";
 
 /** État complet du formulaire d'édition, partagé éditeur <-> prévisualisation. */
 export interface LauncherFormData {
@@ -37,6 +43,18 @@ export interface LauncherFormData {
   buttonStyle: ButtonStyle;
   cardShape: CardShape;
   menuPlacement: MenuPlacement;
+  backgroundFit: BackgroundFit;
+  backgroundPosition: BackgroundPosition;
+  backgroundOverlay: number;
+  backgroundBlur: number;
+  panelOpacity: number;
+  fontFamily: LauncherFont;
+  cornerRadius: number;
+  contentDensity: ContentDensity;
+  sidebarStyle: SidebarStyle;
+  logoShape: LogoShape;
+  playButtonLabel: string;
+  showServerStatus: boolean;
   showNews: boolean;
   showDiscord: boolean;
   showWebsite: boolean;
@@ -83,6 +101,18 @@ export const DEFAULT_FORM: LauncherFormData = {
   buttonStyle: "glow",
   cardShape: "rounded",
   menuPlacement: "left",
+  backgroundFit: "cover",
+  backgroundPosition: "center",
+  backgroundOverlay: 48,
+  backgroundBlur: 0,
+  panelOpacity: 72,
+  fontFamily: "poppins",
+  cornerRadius: 14,
+  contentDensity: "comfortable",
+  sidebarStyle: "glass",
+  logoShape: "rounded",
+  playButtonLabel: "JOUER",
+  showServerStatus: true,
   showNews: true,
   showDiscord: false,
   showWebsite: false,

@@ -83,6 +83,18 @@ export interface SkinConfig {
   buttonStyle: ButtonStyle;
   cardShape: CardShape;
   menuPlacement: MenuPlacement;
+  backgroundFit: "cover" | "contain" | "fill";
+  backgroundPosition: "center" | "top" | "bottom" | "left" | "right";
+  backgroundOverlay: number;
+  backgroundBlur: number;
+  panelOpacity: number;
+  fontFamily: "poppins" | "inter" | "system" | "serif" | "pixel";
+  cornerRadius: number;
+  contentDensity: "compact" | "comfortable" | "spacious";
+  sidebarStyle: "glass" | "solid" | "floating";
+  logoShape: "square" | "rounded" | "circle";
+  playButtonLabel: string;
+  showServerStatus: boolean;
   showNews: boolean;
   mcVersion: string;
   loader: string;

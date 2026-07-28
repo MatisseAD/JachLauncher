@@ -28,6 +28,7 @@ import {
 import { fetchServerStatus } from "./server-status";
 import { loadState, sanitizeSettings, saveState } from "./store";
 import { getSystemInfo } from "./system";
+import { setupAutoUpdates } from "./updater";
 
 let mainWindow: BrowserWindow | null = null;
 let state: LauncherState;
@@ -41,6 +42,7 @@ let pendingManifest: {
 let lastError: string | null = null;
 let busyOperation: "launch" | "repair" | null = null;
 const logBuffer: string[] = [];
+let stopAutoUpdates: (() => void) | null = null;
 
 function createWindow(): void {
   const iconPath = path.join(__dirname, "../../build/icon.png");
@@ -344,6 +346,7 @@ void app.whenReady().then(async () => {
   if (state.account) rehydrateOffline(state.account);
   registerIpc();
   createWindow();
+  stopAutoUpdates = setupAutoUpdates(() => mainWindow);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -351,4 +354,9 @@ void app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  stopAutoUpdates?.();
+  stopAutoUpdates = null;
 });

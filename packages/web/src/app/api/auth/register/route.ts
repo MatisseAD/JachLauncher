@@ -12,6 +12,14 @@ const Body = z.object({
     .max(32)
     .regex(/^[a-zA-Z0-9_-]+$/),
   password: z.string().min(8).max(128),
+  email: z
+    .string()
+    .trim()
+    .email()
+    .max(254)
+    .or(z.literal(""))
+    .optional()
+    .transform((value) => value?.toLowerCase() || null),
 });
 
 export async function POST(req: Request) {
@@ -25,7 +33,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Données invalides" }, { status: 400 });
   }
-  const { username, password } = parsed.data;
+  const { username, password, email } = parsed.data;
 
   try {
     const existing = await prisma.user.findUnique({ where: { username } });
@@ -37,7 +45,7 @@ export async function POST(req: Request) {
     }
 
     const user = await prisma.user.create({
-      data: { username, password: await hashPassword(password) },
+      data: { username, email, password: await hashPassword(password) },
     });
     await createSession({ userId: user.id, username: user.username });
     return NextResponse.json({ ok: true, username: user.username });
@@ -46,8 +54,13 @@ export async function POST(req: Request) {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
+      const target = String(error.meta?.target ?? "");
       return NextResponse.json(
-        { error: "Nom d'utilisateur déjà pris" },
+        {
+          error: target.includes("email")
+            ? "Cette adresse e-mail est déjà utilisée"
+            : "Nom d'utilisateur déjà pris",
+        },
         { status: 409 },
       );
     }

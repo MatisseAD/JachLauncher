@@ -4,6 +4,12 @@
  */
 export function assetUrl(stored?: string | null): string | undefined {
   if (!stored) return undefined;
-  if (/^https?:\/\//i.test(stored) || stored.startsWith("data:")) return stored;
+  if (
+    /^https?:\/\//i.test(stored) ||
+    stored.startsWith("data:") ||
+    stored.startsWith("/")
+  ) {
+    return stored;
+  }
   return `/api/storage/${stored}`;
 }

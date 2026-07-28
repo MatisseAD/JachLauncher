@@ -3,7 +3,8 @@ import Footer from "@/components/Footer";
 import HeroMockup from "@/components/HeroMockup";
 import Navbar from "@/components/Navbar";
 import UiIcon, { type UiIconName } from "@/components/UiIcon";
-import { getDict } from "@/i18n/server";
+import { getDict, getLocale } from "@/i18n/server";
+import { getMarketingCopy } from "@/i18n/marketing-content";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
@@ -11,25 +12,25 @@ const showcase = [
   {
     name: "Nova Survival",
     code: "nova-survival",
-    type: "Survie communautaire",
+    type: 0,
     version: "1.21.8 · Fabric",
-    players: "128 joueurs",
+    players: 128,
     colors: ["#8b5cf6", "#3b1b6f"],
   },
   {
     name: "Elyria Origins",
     code: "elyria-origins",
-    type: "Aventure modée",
+    type: 1,
     version: "1.20.1 · Forge",
-    players: "64 joueurs",
+    players: 64,
     colors: ["#059669", "#083b34"],
   },
   {
     name: "Block District",
     code: "block-district",
-    type: "Mini-jeux",
-    version: "1.21.5 · Paper",
-    players: "En préparation",
+    type: 2,
+    version: "1.21.5 · Vanilla",
+    players: null,
     colors: ["#2563eb", "#172554"],
   },
 ];
@@ -53,11 +54,13 @@ async function getPublicStats() {
 }
 
 export default async function Home() {
-  const [session, t, stats] = await Promise.all([
+  const [session, t, stats, locale] = await Promise.all([
     getSession(),
     getDict(),
     getPublicStats(),
+    getLocale(),
   ]);
+  const copy = getMarketingCopy(locale);
   const createHref = session ? "/dashboard/new" : "/register";
 
   return (
@@ -72,11 +75,10 @@ export default async function Home() {
             <div className="marketing-hero-copy">
               <span className="announcement-pill">
                 <i />
-                Plateforme gratuite pour créateurs Minecraft
+                {copy.announcement}
               </span>
               <h1>
-                Le launcher de ton serveur.{" "}
-                <span>Prêt à jouer, sans coder.</span>
+                {copy.headline} <span>{copy.headlineAccent}</span>
               </h1>
               <p>{t.hero.subtitle}</p>
               <div className="hero-actions">
@@ -95,22 +97,22 @@ export default async function Home() {
               </div>
               <div className="hero-proof">
                 <span>
-                  <UiIcon name="check" size={15} /> Sans carte bancaire
+                  <UiIcon name="check" size={15} /> {copy.noCard}
                 </span>
                 <span>
-                  <UiIcon name="check" size={15} /> Aperçu instantané
+                  <UiIcon name="check" size={15} /> {copy.instantPreview}
                 </span>
                 <span>
-                  <UiIcon name="check" size={15} /> Jusqu’à 3 launchers
+                  <UiIcon name="check" size={15} /> {copy.upToThree}
                 </span>
               </div>
             </div>
             <div className="hero-product">
               <div className="hero-product-label">
                 <span>
-                  <i /> Démo interactive
+                  <i /> {copy.interactiveDemo}
                 </span>
-                <small>Application desktop</small>
+                <small>{copy.desktopApp}</small>
               </div>
               <HeroMockup />
             </div>
@@ -124,44 +126,44 @@ export default async function Home() {
           <div>
             <strong>{stats.users}</strong>
             <span>
-              créateur{stats.users > 1 ? "s" : ""} inscrit
-              {stats.users > 1 ? "s" : ""}
+              {copy.creators} {copy.registered}
             </span>
           </div>
           <div>
             <strong>{stats.launchers}</strong>
             <span>
-              launcher{stats.launchers > 1 ? "s" : ""} configuré
-              {stats.launchers > 1 ? "s" : ""}
+              {copy.launchers} {copy.configured}
             </span>
           </div>
           <div>
             <strong>{stats.published}</strong>
             <span>
-              serveur{stats.published > 1 ? "s" : ""} publié
-              {stats.published > 1 ? "s" : ""}
+              {copy.servers} {copy.published}
             </span>
           </div>
           <div>
             <strong>5</strong>
-            <span>mod loaders supportés</span>
+            <span>{copy.supportedLoaders}</span>
           </div>
         </section>
 
         <section className="marketing-section" id="examples">
           <div className="section-intro split">
             <div>
-              <span className="page-kicker">Inspirations</span>
-              <h2>Un launcher à l’image de chaque serveur</h2>
+              <span className="page-kicker">{copy.inspirations}</span>
+              <h2>{copy.examplesTitle}</h2>
             </div>
-            <p>
-              Pars d’une base professionnelle, puis adapte chaque détail à ton
-              univers : couleurs, actualités, mods, événements et serveur.
-            </p>
+            <p>{copy.examplesIntro}</p>
           </div>
           <div className="showcase-grid">
             {showcase.map((item, index) => (
-              <article className="showcase-card" key={item.code}>
+              <Link
+                href={`/preview/${item.code}`}
+                target="_blank"
+                className="showcase-card"
+                key={item.code}
+                aria-label={`Ouvrir la démonstration ${item.name}`}
+              >
                 <div
                   className="showcase-cover"
                   style={{
@@ -170,22 +172,29 @@ export default async function Home() {
                 >
                   <span className="showcase-number">0{index + 1}</span>
                   <span className="showcase-state">
-                    <i /> Exemple
+                    <i /> {copy.example}
                   </span>
                   <UiIcon name="rocket" size={42} />
                 </div>
                 <div className="showcase-body">
                   <div>
-                    <span>{item.type}</span>
+                    <span>{copy.showcaseTypes[item.type]}</span>
                     <h3>{item.name}</h3>
                   </div>
                   <code>{item.code}</code>
                   <div className="showcase-meta">
                     <span>{item.version}</span>
-                    <span>{item.players}</span>
+                    <span>
+                      {item.players == null
+                        ? copy.preparing
+                        : `${item.players} ${copy.players}`}
+                    </span>
                   </div>
                 </div>
-              </article>
+                <span className="showcase-open">
+                  {copy.tryExample} <UiIcon name="external" size={14} />
+                </span>
+              </Link>
             ))}
           </div>
         </section>
@@ -231,12 +240,9 @@ export default async function Home() {
           <div className="workflow-copy">
             <span className="page-kicker">{t.how.eyebrow}</span>
             <h2>{t.how.title}</h2>
-            <p>
-              Une expérience guidée, pensée pour avancer sans connaissance
-              technique et publier sans friction.
-            </p>
+            <p>{copy.workflowIntro}</p>
             <Link href={createHref} className="text-link">
-              Créer mon espace <UiIcon name="arrow" size={16} />
+              {copy.createSpace} <UiIcon name="arrow" size={16} />
             </Link>
           </div>
           <div className="workflow-steps">

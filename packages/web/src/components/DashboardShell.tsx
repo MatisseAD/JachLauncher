@@ -6,49 +6,54 @@ import type { ReactNode } from "react";
 import LogoMark from "./LogoMark";
 import LogoutButton from "./LogoutButton";
 import UiIcon, { type UiIconName } from "./UiIcon";
-
-const navigation: Array<{
-  href: string;
-  label: string;
-  mobileLabel: string;
-  icon: UiIconName;
-  exact?: boolean;
-}> = [
-  {
-    href: "/dashboard",
-    label: "Vue d’ensemble",
-    mobileLabel: "Accueil",
-    icon: "dashboard",
-    exact: true,
-  },
-  {
-    href: "/dashboard/new",
-    label: "Nouveau launcher",
-    mobileLabel: "Nouveau",
-    icon: "plus",
-  },
-  {
-    href: "/help",
-    label: "Guide d’utilisation",
-    mobileLabel: "Guide",
-    icon: "help",
-  },
-  {
-    href: "/account",
-    label: "Mon compte",
-    mobileLabel: "Compte",
-    icon: "user",
-  },
-];
+import { useI18n } from "@/i18n/I18nProvider";
+import { getDashboardCopy } from "@/i18n/dashboard-content";
 
 export default function DashboardShell({
   username,
+  avatarUrl,
   children,
 }: {
   username: string;
+  avatarUrl?: string | null;
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const { locale } = useI18n();
+  const copy = getDashboardCopy(locale).shell;
+  const navigation: Array<{
+    href: string;
+    label: string;
+    mobileLabel: string;
+    icon: UiIconName;
+    exact?: boolean;
+  }> = [
+    {
+      href: "/dashboard",
+      label: copy.overview,
+      mobileLabel: copy.home,
+      icon: "dashboard",
+      exact: true,
+    },
+    {
+      href: "/dashboard/new",
+      label: copy.newLauncher,
+      mobileLabel: copy.newShort,
+      icon: "plus",
+    },
+    {
+      href: "/help",
+      label: copy.guide,
+      mobileLabel: copy.guide,
+      icon: "help",
+    },
+    {
+      href: "/account",
+      label: copy.account,
+      mobileLabel: copy.account,
+      icon: "user",
+    },
+  ];
 
   function isActive(href: string, exact = false) {
     return exact ? pathname === href : pathname.startsWith(href);
@@ -61,7 +66,7 @@ export default function DashboardShell({
           <LogoMark />
         </Link>
 
-        <div className="sidebar-label">Espace créateur</div>
+        <div className="sidebar-label">{copy.creatorArea}</div>
         <nav className="sidebar-nav" aria-label="Navigation du dashboard">
           {navigation.map((item) => (
             <Link
@@ -81,18 +86,24 @@ export default function DashboardShell({
           <span className="sidebar-support-icon">
             <UiIcon name="sparkles" size={18} />
           </span>
-          <strong>Besoin d’aide ?</strong>
-          <p>Le guide explique chaque étape, du code serveur au partage.</p>
+          <strong>{copy.supportTitle}</strong>
+          <p>{copy.supportText}</p>
           <Link href="/help">
-            Ouvrir le guide <UiIcon name="arrow" size={14} />
+            {copy.openGuide} <UiIcon name="arrow" size={14} />
           </Link>
         </div>
 
         <div className="sidebar-user">
-          <div className="avatar">{username.charAt(0).toUpperCase()}</div>
+          <div className="avatar">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" />
+            ) : (
+              username.charAt(0).toUpperCase()
+            )}
+          </div>
           <div className="sidebar-user-copy">
             <strong>{username}</strong>
-            <span>Compte créateur</span>
+            <span>{copy.creatorAccount}</span>
           </div>
           <LogoutButton compact />
         </div>
@@ -106,10 +117,10 @@ export default function DashboardShell({
           </Link>
           <div className="topbar-status">
             <span className="status-pulse" />
-            Services opérationnels
+            {copy.operational}
           </div>
           <Link href="/" className="topbar-link">
-            Voir le site <UiIcon name="external" size={15} />
+            {copy.viewSite} <UiIcon name="external" size={15} />
           </Link>
         </header>
         <div className="dashboard-content">{children}</div>

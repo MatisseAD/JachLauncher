@@ -82,7 +82,10 @@ async function main() {
   }
   const origin = appUrl.origin;
   const username = `codex_smoke_${Date.now().toString(36)}`;
+  const updatedUsername = `${username}_updated`;
+  const email = `${username}@example.test`;
   const password = randomBytes(24).toString("base64url");
+  const nextPassword = randomBytes(24).toString("base64url");
   const prisma = new PrismaClient({
     datasources: {
       db: { url: normalizeDatabaseUrl(readDatabaseUrl()) },
@@ -94,7 +97,7 @@ async function main() {
     const register = await fetch(`${origin}/api/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, email, password }),
       redirect: "manual",
     });
     await expectOk(register, "L'inscription");
@@ -133,13 +136,58 @@ async function main() {
     });
     await expectOk(secondDashboard, "La session après connexion");
 
+    const profileUpdate = await fetch(`${origin}/api/account/profile`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: loginCookie,
+      },
+      body: JSON.stringify({
+        username: updatedUsername,
+        email,
+        currentPassword: password,
+      }),
+      redirect: "manual",
+    });
+    await expectOk(profileUpdate, "La modification du profil");
+    const updatedCookie = sessionCookie(profileUpdate);
+
+    const passwordUpdate = await fetch(`${origin}/api/account/password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: updatedCookie,
+      },
+      body: JSON.stringify({
+        currentPassword: password,
+        newPassword: nextPassword,
+      }),
+    });
+    await expectOk(passwordUpdate, "La modification du mot de passe");
+
+    const emailLogin = await fetch(`${origin}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: email, password: nextPassword }),
+      redirect: "manual",
+    });
+    await expectOk(emailLogin, "La connexion par e-mail");
+    const emailCookie = sessionCookie(emailLogin);
+    const account = await fetch(`${origin}/account`, {
+      headers: { Cookie: emailCookie },
+      redirect: "manual",
+    });
+    await expectOk(account, "La session du compte après modification");
+
     console.log(
-      "Smoke auth réussi : inscription, refus du mauvais mot de passe, connexion et sessions.",
+      "Smoke auth réussi : inscription, refus du mauvais mot de passe, connexion, profil, e-mail, mot de passe et sessions.",
     );
   } finally {
     try {
       if (created) {
-        await prisma.user.deleteMany({ where: { username } });
+        await prisma.user.deleteMany({
+          where: { username: { in: [username, updatedUsername] } },
+        });
         console.log("Compte de test supprimé.");
       }
     } finally {

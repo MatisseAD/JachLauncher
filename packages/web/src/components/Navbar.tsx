@@ -1,12 +1,18 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
-import { getDict } from "@/i18n/server";
+import { getDict, getLocale } from "@/i18n/server";
+import { getMarketingCopy } from "@/i18n/marketing-content";
 import LanguageSwitcher from "./LanguageSwitcher";
 import LogoMark from "./LogoMark";
 import UiIcon from "./UiIcon";
 
 export default async function Navbar() {
-  const [session, t] = await Promise.all([getSession(), getDict()]);
+  const [session, t, locale] = await Promise.all([
+    getSession(),
+    getDict(),
+    getLocale(),
+  ]);
+  const copy = getMarketingCopy(locale);
 
   return (
     <header className="navbar">
@@ -20,7 +26,7 @@ export default async function Navbar() {
             {t.nav.features}
           </Link>
           <Link href="/#examples" className="navlink">
-            Exemples
+            {copy.examples}
           </Link>
           <Link href="/help" className="navlink">
             {t.nav.help}

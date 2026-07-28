@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { assetUrl } from "@/lib/asset";
 import UiIcon from "./UiIcon";
+import { useI18n } from "@/i18n/I18nProvider";
+import { getDashboardCopy } from "@/i18n/dashboard-content";
 
 export interface LauncherSummary {
   id: string;
@@ -23,18 +25,19 @@ export interface LauncherSummary {
   updatedAt: string;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Brouillon",
-  ready: "Prêt",
-  published: "En ligne",
-};
-
 export default function LauncherCard({
   launcher,
 }: {
   launcher: LauncherSummary;
 }) {
   const router = useRouter();
+  const { locale } = useI18n();
+  const copy = getDashboardCopy(locale).card;
+  const statusLabel: Record<string, string> = {
+    draft: copy.draft,
+    ready: copy.ready,
+    published: copy.online,
+  };
   const [busy, setBusy] = useState(false);
   const [favorite, setFavorite] = useState(launcher.favorite);
 
@@ -69,7 +72,7 @@ export default function LauncherCard({
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error ?? "Impossible de modifier la publication.");
+        alert(body.error ?? copy.publishError);
       }
       router.refresh();
     } finally {
@@ -85,7 +88,7 @@ export default function LauncherCard({
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error ?? "Impossible de dupliquer ce launcher.");
+        alert(body.error ?? copy.duplicateError);
       }
       router.refresh();
     } finally {
@@ -94,9 +97,7 @@ export default function LauncherCard({
   }
 
   async function remove() {
-    if (
-      !confirm(`Supprimer « ${launcher.title} » ? Cette action est définitive.`)
-    ) {
+    if (!confirm(`${copy.deleteConfirm}\n${launcher.title}`)) {
       return;
     }
     setBusy(true);
@@ -105,7 +106,7 @@ export default function LauncherCard({
         method: "DELETE",
       });
       if (!response.ok) {
-        alert("Impossible de supprimer ce launcher.");
+        alert(copy.deleteError);
       }
       router.refresh();
     } finally {
@@ -119,14 +120,14 @@ export default function LauncherCard({
         <button
           className={`favorite-button ${favorite ? "active" : ""}`}
           onClick={toggleFavorite}
-          aria-label={favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
-          title={favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+          aria-label={favorite ? copy.removeFavorite : copy.addFavorite}
+          title={favorite ? copy.removeFavorite : copy.addFavorite}
         >
           {favorite ? "★" : "☆"}
         </button>
         <span className={`status-chip ${launcher.status}`}>
           <i />
-          {STATUS_LABEL[launcher.status] ?? launcher.status}
+          {statusLabel[launcher.status] ?? launcher.status}
         </span>
         <div className="launcher-identity">
           {logo ? (
@@ -144,7 +145,7 @@ export default function LauncherCard({
       </div>
 
       <div className="launcher-body">
-        <p>{launcher.description || "Aucune description pour le moment."}</p>
+        <p>{launcher.description || copy.noDescription}</p>
         <div className="launcher-specs">
           <span>
             <UiIcon name="layers" size={14} />
@@ -155,8 +156,8 @@ export default function LauncherCard({
             {launcher.loader}
           </span>
           <span>
-            Mis à jour{" "}
-            {new Date(launcher.updatedAt).toLocaleDateString("fr-FR", {
+            {copy.updated}{" "}
+            {new Date(launcher.updatedAt).toLocaleDateString(locale, {
               day: "numeric",
               month: "short",
             })}
@@ -164,14 +165,14 @@ export default function LauncherCard({
         </div>
         <div className="launcher-actions">
           <Link className="btn secondary sm" href={`/dashboard/${launcher.id}`}>
-            Configurer
+            {copy.configure}
           </Link>
           <Link
             className="icon-action"
             href={`/preview/${launcher.slug}`}
             target="_blank"
-            aria-label="Ouvrir l’aperçu"
-            title="Ouvrir l’aperçu"
+            aria-label={copy.openPreview}
+            title={copy.openPreview}
           >
             <UiIcon name="external" size={16} />
           </Link>
@@ -180,9 +181,11 @@ export default function LauncherCard({
             disabled={busy}
             onClick={togglePublish}
             aria-label={
-              launcher.status === "published" ? "Dépublier" : "Publier"
+              launcher.status === "published" ? copy.unpublish : copy.publish
             }
-            title={launcher.status === "published" ? "Dépublier" : "Publier"}
+            title={
+              launcher.status === "published" ? copy.unpublish : copy.publish
+            }
           >
             <UiIcon name="rocket" size={16} />
           </button>
@@ -190,8 +193,8 @@ export default function LauncherCard({
             className="icon-action"
             disabled={busy}
             onClick={duplicate}
-            aria-label="Dupliquer"
-            title="Dupliquer"
+            aria-label={copy.duplicate}
+            title={copy.duplicate}
           >
             <UiIcon name="layers" size={16} />
           </button>
@@ -199,8 +202,8 @@ export default function LauncherCard({
             className="icon-action danger"
             disabled={busy}
             onClick={remove}
-            aria-label="Supprimer"
-            title="Supprimer"
+            aria-label={copy.remove}
+            title={copy.remove}
           >
             ×
           </button>

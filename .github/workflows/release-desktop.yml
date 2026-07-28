@@ -40,6 +40,12 @@ jobs:
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($installer.Name)" | Set-Content "packages/launcher/release/SHA256SUMS.txt"
 
+      - name: Publish the public automatic-update channel
+        if: ${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: node scripts/publish-desktop-update.mjs
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:

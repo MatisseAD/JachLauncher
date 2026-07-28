@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useDict } from "@/i18n/I18nProvider";
+import { useI18n } from "@/i18n/I18nProvider";
+import { getAuthCopy } from "@/i18n/auth-content";
 import LogoMark from "@/components/LogoMark";
 import UiIcon from "@/components/UiIcon";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const t = useDict();
+  const { t, locale } = useI18n();
+  const copy = getAuthCopy(locale);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,7 +26,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, email, password }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -46,37 +49,30 @@ export default function RegisterPage() {
           <LogoMark />
         </Link>
         <div className="auth-aside-copy">
-          <span className="page-kicker">Gratuit pour commencer</span>
-          <h1>Transforme ton serveur en vraie expérience de jeu.</h1>
-          <p>
-            Crée jusqu’à trois launchers, personnalise-les entièrement et
-            partage un simple code avec tes joueurs.
-          </p>
+          <span className="page-kicker">{copy.free}</span>
+          <h1>{copy.registerHero}</h1>
+          <p>{copy.registerIntro}</p>
           <div className="auth-quote">
             <UiIcon name="rocket" size={22} />
             <div>
-              <strong>Pas de code. Pas de carte bancaire.</strong>
-              <span>
-                Ton premier launcher peut être prêt en quelques minutes.
-              </span>
+              <strong>{copy.promise}</strong>
+              <span>{copy.promiseText}</span>
             </div>
           </div>
         </div>
-        <p className="auth-aside-note">YourLauncher · Créé pour Minecraft</p>
+        <p className="auth-aside-note">YourLauncher · {copy.madeFor}</p>
       </section>
 
       <section className="auth-main">
         <Link href="/" className="auth-back">
-          ← Retour au site
+          ← {copy.back}
         </Link>
         <div className="auth-card">
           <span className="auth-icon">
             <UiIcon name="sparkles" size={24} />
           </span>
           <h2>{t.auth.registerTitle}</h2>
-          <p className="auth-subtitle">
-            Deux informations suffisent pour créer ton espace.
-          </p>
+          <p className="auth-subtitle">{copy.registerSubtitle}</p>
           <form onSubmit={submit}>
             <div className="field">
               <label htmlFor="username">{t.auth.usernameLabel}</label>
@@ -85,10 +81,24 @@ export default function RegisterPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
-                placeholder="Choisis ton identifiant"
+                placeholder={copy.usernamePlaceholder}
                 autoFocus
               />
               <div className="hint">{t.auth.usernameHint}</div>
+            </div>
+            <div className="field">
+              <label htmlFor="email">
+                {copy.email} ({copy.optional})
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="toi@exemple.fr"
+              />
+              <div className="hint">{copy.emailHint}</div>
             </div>
             <div className="field">
               <label htmlFor="password">{t.auth.passwordLabel}</label>

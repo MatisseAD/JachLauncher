@@ -5,6 +5,8 @@ import LogoMark from "@/components/LogoMark";
 import { prisma } from "@/lib/db";
 import { rowToForm } from "@/lib/launcher-data";
 import { getSession } from "@/lib/auth";
+import { getDemoLauncher } from "@/lib/demo-launchers";
+import { getLocale } from "@/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +15,33 @@ type Props = { params: Promise<{ slug: string }> };
 // Page d'aperçu plein écran, publique (sert aussi de "Voir un exemple").
 export default async function PreviewPage({ params }: Props) {
   const { slug } = await params;
-  const l = await prisma.launcher.findUnique({ where: { slug } });
-  if (!l) notFound();
+  const l = await prisma.launcher
+    .findUnique({ where: { slug } })
+    .catch(() => null);
+  const demo = getDemoLauncher(slug);
+  if (!l && !demo) notFound();
   const session = await getSession();
-  if (l.status !== "published" && l.ownerId !== session?.userId) notFound();
+  const locale = await getLocale();
+  const labels = {
+    fr: { preview: "Aperçu", back: "Retour", message: "Message de lancement" },
+    en: { preview: "Preview", back: "Back", message: "Launch message" },
+    es: {
+      preview: "Vista previa",
+      back: "Volver",
+      message: "Mensaje de inicio",
+    },
+    de: { preview: "Vorschau", back: "Zurück", message: "Startmeldung" },
+    pt: { preview: "Prévia", back: "Voltar", message: "Mensagem de início" },
+    it: {
+      preview: "Anteprima",
+      back: "Indietro",
+      message: "Messaggio di avvio",
+    },
+  }[locale];
+  if (l && l.status !== "published" && l.ownerId !== session?.userId)
+    notFound();
 
-  const data = rowToForm(l);
+  const data = l ? rowToForm(l) : demo!;
 
   return (
     <div
@@ -29,9 +52,11 @@ export default async function PreviewPage({ params }: Props) {
           <LogoMark />
         </Link>
         <div className="row" style={{ gap: 12 }}>
-          <span className="badge">Aperçu · {data.title}</span>
+          <span className="badge">
+            {labels.preview} · {data.title}
+          </span>
           <Link href="/dashboard" className="btn ghost sm">
-            Retour
+            {labels.back}
           </Link>
         </div>
       </div>
@@ -48,7 +73,7 @@ export default async function PreviewPage({ params }: Props) {
           <LauncherPreview data={data} fullscreen />
           {data.preLaunchMessage && (
             <p className="muted center" style={{ marginTop: 16 }}>
-              💬 {data.preLaunchMessage}
+              💬 {labels.message}: {data.preLaunchMessage}
             </p>
           )}
         </div>

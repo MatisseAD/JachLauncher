@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useDict } from "@/i18n/I18nProvider";
+import { useI18n } from "@/i18n/I18nProvider";
+import { getAuthCopy } from "@/i18n/auth-content";
 import LogoMark from "@/components/LogoMark";
 import UiIcon from "@/components/UiIcon";
 
 export default function LoginPage() {
   const router = useRouter();
-  const t = useDict();
+  const { t, locale } = useI18n();
+  const copy = getAuthCopy(locale);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -46,51 +48,46 @@ export default function LoginPage() {
           <LogoMark />
         </Link>
         <div className="auth-aside-copy">
-          <span className="page-kicker">Espace créateur</span>
-          <h1>Retrouve tous tes launchers au même endroit.</h1>
-          <p>
-            Modifie une version, publie une actualité et suis l’activité de tes
-            joueurs depuis ton dashboard.
-          </p>
+          <span className="page-kicker">{copy.creatorSpace}</span>
+          <h1>{copy.loginHero}</h1>
+          <p>{copy.loginIntro}</p>
           <div className="auth-benefits">
             <span>
               <UiIcon name="activity" size={18} />
-              Métriques d’utilisation sur 7 jours
+              {copy.metrics}
             </span>
             <span>
               <UiIcon name="shield" size={18} />
-              Session sécurisée
+              {copy.secure}
             </span>
             <span>
               <UiIcon name="sparkles" size={18} />
-              Prévisualisation instantanée
+              {copy.preview}
             </span>
           </div>
         </div>
-        <p className="auth-aside-note">YourLauncher · Créé pour Minecraft</p>
+        <p className="auth-aside-note">YourLauncher · {copy.madeFor}</p>
       </section>
 
       <section className="auth-main">
         <Link href="/" className="auth-back">
-          ← Retour au site
+          ← {copy.back}
         </Link>
         <div className="auth-card">
           <span className="auth-icon">
             <UiIcon name="user" size={24} />
           </span>
           <h2>{t.auth.loginTitle}</h2>
-          <p className="auth-subtitle">
-            Entre tes identifiants pour accéder à ton espace.
-          </p>
+          <p className="auth-subtitle">{copy.loginSubtitle}</p>
           <form onSubmit={submit}>
             <div className="field">
-              <label htmlFor="username">{t.auth.usernameLabel}</label>
+              <label htmlFor="username">{copy.identifier}</label>
               <input
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
-                placeholder="Ton nom d’utilisateur"
+                placeholder={copy.identifierPlaceholder}
                 autoFocus
               />
             </div>

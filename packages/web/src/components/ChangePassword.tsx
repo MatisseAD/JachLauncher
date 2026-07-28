@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useI18n } from "@/i18n/I18nProvider";
+import { getAccountCopy } from "@/i18n/account-content";
 
 export default function ChangePassword() {
+  const { locale } = useI18n();
+  const copy = getAccountCopy(locale).password;
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [msg, setMsg] = useState("");
@@ -25,11 +29,11 @@ export default function ChangePassword() {
         setError(json.error ?? "Erreur");
         return;
       }
-      setMsg("Mot de passe mis à jour ✓");
+      setMsg(copy.success);
       setCurrent("");
       setNext("");
     } catch {
-      setError("Connexion impossible. Réessaie dans quelques instants.");
+      setError(copy.failed);
     } finally {
       setBusy(false);
     }
@@ -38,7 +42,7 @@ export default function ChangePassword() {
   return (
     <form onSubmit={submit}>
       <div className="field">
-        <label htmlFor="current-password">Mot de passe actuel</label>
+        <label htmlFor="current-password">{copy.current}</label>
         <input
           id="current-password"
           type="password"
@@ -49,7 +53,7 @@ export default function ChangePassword() {
         />
       </div>
       <div className="field">
-        <label htmlFor="new-password">Nouveau mot de passe</label>
+        <label htmlFor="new-password">{copy.next}</label>
         <input
           id="new-password"
           type="password"
@@ -58,10 +62,10 @@ export default function ChangePassword() {
           autoComplete="new-password"
           placeholder="6 caractères minimum"
         />
-        <div className="hint">Minimum 6 caractères.</div>
+        <div className="hint">{copy.hint}</div>
       </div>
       <button className="btn security-submit" disabled={busy}>
-        {busy ? "Mise à jour…" : "Mettre à jour"}
+        {busy ? copy.updating : copy.update}
       </button>
       {msg && (
         <div className="success" style={{ marginTop: 10 }}>

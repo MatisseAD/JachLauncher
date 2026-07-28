@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { getDict } from "@/i18n/server";
+import { getDict, getLocale } from "@/i18n/server";
+import { getMarketingCopy } from "@/i18n/marketing-content";
 import LanguageSwitcher from "./LanguageSwitcher";
 import LogoMark from "./LogoMark";
 import UiIcon from "./UiIcon";
 
 export default async function Footer() {
-  const t = await getDict();
+  const [t, locale] = await Promise.all([getDict(), getLocale()]);
+  const copy = getMarketingCopy(locale);
 
   return (
     <footer className="footer">
@@ -16,14 +18,14 @@ export default async function Footer() {
           </Link>
           <p>{t.footer.tagline}</p>
           <span className="footer-status">
-            <i /> Plateforme opérationnelle
+            <i /> {copy.operational}
           </span>
         </div>
 
         <div className="footer-col">
           <h4>{t.footer.colProduct}</h4>
           <Link href="/#features">{t.footer.linkFeatures}</Link>
-          <Link href="/#examples">Exemples</Link>
+          <Link href="/#examples">{copy.examples}</Link>
           <Link href="/register">{t.footer.linkCreate}</Link>
         </div>
 

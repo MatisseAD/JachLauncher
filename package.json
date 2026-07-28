@@ -26,7 +26,8 @@
     "smoke:web": "node scripts/smoke-web.mjs",
     "smoke:auth:production": "node scripts/smoke-auth-production.mjs",
     "key:generate": "node scripts/generate-manifest-key.mjs",
-    "deploy:vercel": "node scripts/deploy-vercel.mjs"
+    "deploy:vercel": "node scripts/deploy-vercel.mjs",
+    "release:publish": "node scripts/publish-desktop-update.mjs"
   },
   "engines": {
     "node": ">=20"

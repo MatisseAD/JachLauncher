@@ -2,10 +2,12 @@ import Link from "next/link";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import UiIcon from "@/components/UiIcon";
-import { getDict } from "@/i18n/server";
+import { getLocale } from "@/i18n/server";
+import { getGuideContent } from "@/i18n/guide-content";
 
 export default async function HelpPage() {
-  const t = await getDict();
+  const locale = await getLocale();
+  const guide = getGuideContent(locale);
   const downloadUrl = process.env.NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL;
 
   return (
@@ -13,43 +15,47 @@ export default async function HelpPage() {
       <Navbar />
       <main className="help-page">
         <section className="help-hero">
-          <span className="page-kicker">Centre d’aide</span>
-          <h1>{t.help.title}</h1>
-          <p>{t.help.subtitle}</p>
+          <span className="page-kicker">{guide.heroKicker}</span>
+          <h1>{guide.title}</h1>
+          <p>{guide.subtitle}</p>
           <div className="help-hero-actions">
             <a href="#creation" className="btn">
-              Créer un launcher <UiIcon name="arrow" size={17} />
+              {guide.creatorAction} <UiIcon name="arrow" size={17} />
             </a>
             <a href="#installation" className="btn secondary">
-              Installer l’application
+              {guide.playerAction}
             </a>
           </div>
         </section>
 
         <section className="help-layout" id="creation">
           <aside className="help-toc">
-            <span>Dans ce guide</span>
-            <a href="#creation">Créer et publier</a>
-            <a href="#installation">Installer l’application</a>
-            <a href="#faq">Questions fréquentes</a>
+            <span>{guide.tocTitle}</span>
+            <a href="#creation">{guide.tocCreation}</a>
+            <a href="#installation">{guide.tocInstall}</a>
+            <a href="#troubleshooting">{guide.tocTroubleshoot}</a>
+            <a href="#faq">{guide.tocFaq}</a>
           </aside>
 
           <div className="help-content">
             <section>
               <div className="section-title-row">
                 <div>
-                  <span className="page-kicker">Guide créateur</span>
-                  <h2>Créer et publier un launcher</h2>
+                  <span className="page-kicker">{guide.creatorKicker}</span>
+                  <h2>{guide.creatorTitle}</h2>
                 </div>
-                <span>{t.help.steps.length} étapes</span>
+                <span>{guide.stepCount}</span>
               </div>
               <div className="guide-steps">
-                {t.help.steps.map((step, index) => (
+                {guide.steps.map((step, index) => (
                   <article key={step.title}>
                     <span className="guide-number">0{index + 1}</span>
                     <div>
                       <h3>{step.title}</h3>
                       <p>{step.desc}</p>
+                      <small className="guide-tip">
+                        <UiIcon name="sparkles" size={13} /> {step.tip}
+                      </small>
                     </div>
                   </article>
                 ))}
@@ -58,40 +64,23 @@ export default async function HelpPage() {
 
             <section className="installation-guide" id="installation">
               <div>
-                <span className="page-kicker">Côté joueur</span>
-                <h2>Installer et utiliser YourLauncher</h2>
-                <p>
-                  L’application est commune à tous les serveurs. Une fois
-                  installée, le joueur saisit simplement le code communiqué par
-                  le créateur.
-                </p>
+                <span className="page-kicker">{guide.playerKicker}</span>
+                <h2>{guide.playerTitle}</h2>
+                <p>{guide.playerIntro}</p>
                 <ul>
-                  <li>
-                    <UiIcon name="check" size={16} /> Installe l’application
-                    Windows.
-                  </li>
-                  <li>
-                    <UiIcon name="check" size={16} /> Connecte ton compte
-                    Microsoft ou choisis le mode hors-ligne.
-                  </li>
-                  <li>
-                    <UiIcon name="check" size={16} /> Saisis le code du launcher
-                    publié.
-                  </li>
-                  <li>
-                    <UiIcon name="check" size={16} /> Clique sur Jouer :
-                    versions, Java et contenus sont préparés automatiquement.
-                  </li>
+                  {guide.playerSteps.map((step) => (
+                    <li key={step}>
+                      <UiIcon name="check" size={16} /> {step}
+                    </li>
+                  ))}
                 </ul>
                 {downloadUrl ? (
                   <a className="btn" href={downloadUrl}>
                     <UiIcon name="download" size={17} />
-                    Télécharger pour Windows
+                    {guide.download}
                   </a>
                 ) : (
-                  <span className="btn is-disabled">
-                    Version Windows bientôt disponible
-                  </span>
+                  <span className="btn is-disabled">{guide.soon}</span>
                 )}
               </div>
               <div className="installation-visual">
@@ -106,15 +95,45 @@ export default async function HelpPage() {
               </div>
             </section>
 
+            <section id="troubleshooting">
+              <div className="section-title-row">
+                <div>
+                  <span className="page-kicker">
+                    {guide.troubleshootingKicker}
+                  </span>
+                  <h2>{guide.troubleshootingTitle}</h2>
+                </div>
+              </div>
+              <div className="troubleshooting-grid">
+                {guide.troubleshooting.map((item, index) => (
+                  <article key={item.title}>
+                    <span className="metric-icon purple">
+                      <UiIcon
+                        name={
+                          (["help", "shield", "activity", "sparkles"] as const)[
+                            index
+                          ]
+                        }
+                        size={18}
+                      />
+                    </span>
+                    <h3>{item.title}</h3>
+                    <p>{item.desc}</p>
+                    <strong>{item.action}</strong>
+                  </article>
+                ))}
+              </div>
+            </section>
+
             <section id="faq">
               <div className="section-title-row">
                 <div>
-                  <span className="page-kicker">Réponses rapides</span>
-                  <h2>{t.help.faqTitle}</h2>
+                  <span className="page-kicker">{guide.faqKicker}</span>
+                  <h2>{guide.faqTitle}</h2>
                 </div>
               </div>
               <div className="faq-grid">
-                {t.help.faq.map((item) => (
+                {guide.faq.map((item) => (
                   <details key={item.q}>
                     <summary>{item.q}</summary>
                     <p>{item.a}</p>
@@ -128,11 +147,11 @@ export default async function HelpPage() {
                 <UiIcon name="rocket" size={24} />
               </span>
               <div>
-                <h2>{t.help.ctaTitle}</h2>
-                <p>Ton espace de création t’accompagne à chaque étape.</p>
+                <h2>{guide.ctaTitle}</h2>
+                <p>{guide.ctaText}</p>
               </div>
               <Link href="/dashboard/new" className="btn">
-                {t.help.ctaBtn} <UiIcon name="arrow" size={16} />
+                {guide.ctaButton} <UiIcon name="arrow" size={16} />
               </Link>
             </section>
           </div>

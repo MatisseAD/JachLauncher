@@ -1,5 +1,9 @@
 appId: app.yourlauncher.desktop
 productName: YourLauncher
+publish:
+  provider: generic
+  url: https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows
+  channel: latest
 directories:
   output: release
   buildResources: build

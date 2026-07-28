@@ -93,6 +93,24 @@ export function buildManifest(
         launcher.cardShape as LauncherManifest["branding"]["cardShape"],
       menuPlacement:
         launcher.menuPlacement as LauncherManifest["branding"]["menuPlacement"],
+      backgroundFit:
+        launcher.backgroundFit as LauncherManifest["branding"]["backgroundFit"],
+      backgroundPosition:
+        launcher.backgroundPosition as LauncherManifest["branding"]["backgroundPosition"],
+      backgroundOverlay: launcher.backgroundOverlay,
+      backgroundBlur: launcher.backgroundBlur,
+      panelOpacity: launcher.panelOpacity,
+      fontFamily:
+        launcher.fontFamily as LauncherManifest["branding"]["fontFamily"],
+      cornerRadius: launcher.cornerRadius,
+      contentDensity:
+        launcher.contentDensity as LauncherManifest["branding"]["contentDensity"],
+      sidebarStyle:
+        launcher.sidebarStyle as LauncherManifest["branding"]["sidebarStyle"],
+      logoShape:
+        launcher.logoShape as LauncherManifest["branding"]["logoShape"],
+      playButtonLabel: launcher.playButtonLabel,
+      showServerStatus: launcher.showServerStatus,
       showNews: launcher.showNews,
       showDiscord: launcher.showDiscord,
       showWebsite: launcher.showWebsite,
