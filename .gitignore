@@ -19,6 +19,8 @@ packages/launcher/dist-electron/
 .env
 .env.local
 .env*.local
+packages/web/.env.vercel
+.vercel/
 
 # Database
 *.db
@@ -37,3 +39,6 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+.vercel
+.env*

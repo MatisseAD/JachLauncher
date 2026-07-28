@@ -18,13 +18,14 @@
     "dev:web": "npm run dev --workspace=@jach/web",
     "dev:launcher": "npm run dev --workspace=@jach/launcher",
     "typecheck": "npm run bootstrap && npm run typecheck --workspaces --if-present",
-    "lint": "eslint \"packages/**/*.{ts,tsx}\" \"*.{ts,mjs}\"",
+    "lint": "eslint \"packages/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"*.{ts,mjs}\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run build:libs && vitest run",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
     "smoke:web": "node scripts/smoke-web.mjs",
-    "key:generate": "node scripts/generate-manifest-key.mjs"
+    "key:generate": "node scripts/generate-manifest-key.mjs",
+    "deploy:vercel": "node scripts/deploy-vercel.mjs"
   },
   "engines": {
     "node": ">=20"

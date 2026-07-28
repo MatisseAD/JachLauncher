@@ -101,13 +101,35 @@ Vérifie ensuite :
 
 ## 7. Déployer
 
-Un push sur la branche reliée déclenche le pipeline Vercel. Pour un lancement
-manuel sans conserver le CLI dans les dépendances applicatives :
+Le script de déploiement contrôle le code et l'audit de production, lie le
+projet si nécessaire, synchronise les variables sans les afficher, déclenche
+les migrations pendant le build puis vérifie l'accueil et sa CSP.
+
+Crée d'abord un fichier local ignoré par Git :
+
+```powershell
+Copy-Item packages/web/.env.example packages/web/.env.vercel
+```
+
+Remplace ses valeurs par l'URL PostgreSQL distante, un secret de 32 caractères
+minimum et le domaine HTTPS final. Ajoute aussi la clé produite par
+`npm run key:generate` et le jeton Vercel Blob, puis lance :
 
 ```bash
-npx vercel@latest
-npx vercel@latest --prod
+npm run deploy:vercel -- --env-file packages/web/.env.vercel
 ```
+
+Les exécutions suivantes peuvent réutiliser les variables déjà enregistrées :
+
+```bash
+npm run deploy:vercel
+```
+
+Utilise `--preview` pour ne pas promouvoir en production, `--project` et
+`--scope` en environnement non interactif, `--validate-only` pour un contrôle
+sans connexion, ou `--help` pour la liste complète. La CLI est téléchargée à la
+demande et n'est pas conservée dans les dépendances applicatives. En CI,
+configure `VERCEL_TOKEN`, `VERCEL_ORG_ID` et `VERCEL_PROJECT_ID`.
 
 Après déploiement, surveille les échecs de migration, les réponses 429
 d’authentification et la disponibilité de PostgreSQL/Blob. Pour plusieurs
