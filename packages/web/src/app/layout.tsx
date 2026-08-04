@@ -5,7 +5,6 @@ import "@fontsource/poppins/latin-600.css";
 import "@fontsource/poppins/latin-700.css";
 import "@fontsource/poppins/latin-800.css";
 import type { Metadata } from "next";
-import Script from "next/script";
 import { getLocale, getDict } from "@/i18n/server";
 import { getDictionary } from "@/i18n/dictionaries";
 import { I18nProvider } from "@/i18n/I18nProvider";
@@ -42,16 +41,15 @@ export default async function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
           rel="stylesheet"
         />
-      </head>
-      <body>
         {ADSENSE_CLIENT && (
-          <Script
+          <script
             async
-            strategy="afterInteractive"
             crossOrigin="anonymous"
             src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
           />
         )}
+      </head>
+      <body>
         <I18nProvider locale={locale} dict={dict}>
           {children}
         </I18nProvider>
