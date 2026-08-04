@@ -31,6 +31,10 @@ export default async function RootLayout({
   return (
     <html lang={locale}>
       <head>
+        <meta
+          name="google-adsense-account"
+          content="ca-pub-2402260558916344"
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
