@@ -18,6 +18,9 @@ export async function generateMetadata(): Promise<Metadata> {
     title: "YourLauncher — " + dict.hero.titleLine1,
     description: dict.hero.subtitle,
     icons: { icon: "/logo.png", apple: "/logo.png" },
+    other: {
+      "google-adsense-account": "ca-pub-2402260558916344",
+    },
   };
 }
 
