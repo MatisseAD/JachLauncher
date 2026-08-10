@@ -10,10 +10,12 @@ type Ctx = { params: Promise<{ slug: string }> };
 export async function GET(req: Request, { params }: Ctx) {
   const { slug } = await params;
 
-  const launcher = await prisma.launcher
-    .findUnique({ where: { slug } })
-    .catch(() => null);
   const demo = getDemoLauncher(slug);
+  // Les démonstrations intégrées sont canoniques : une ancienne ligne en base
+  // portant le même slug ne doit jamais pouvoir les masquer ou les détourner.
+  const launcher = demo
+    ? null
+    : await prisma.launcher.findUnique({ where: { slug } }).catch(() => null);
   if ((!launcher || launcher.status !== "published") && !demo) {
     return NextResponse.json(
       { error: "Aucun launcher publié avec ce code" },
@@ -26,17 +28,9 @@ export async function GET(req: Request, { params }: Ctx) {
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || reqUrl.origin;
   const download = reqUrl.searchParams.get("download") === "1";
   try {
-    const manifest =
-      launcher && launcher.status === "published"
-        ? buildManifest(launcher, origin)
-        : signManifest(buildDemoManifest(demo!, origin));
-    if (
-      launcher &&
-      !download &&
-      req.headers.get("x-yourlauncher-client") === "desktop"
-    ) {
-      await recordDesktopLoad(launcher.id);
-    }
+    const manifest = demo
+      ? signManifest(buildDemoManifest(demo, origin))
+      : buildManifest(launcher!, origin);
     const headers = corsHeaders();
     if (download) {
       headers["Content-Disposition"] =
@@ -52,26 +46,6 @@ export async function GET(req: Request, { params }: Ctx) {
   }
 }
 
-async function recordDesktopLoad(launcherId: string) {
-  const now = new Date();
-  const day = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-
-  await prisma.launcherDailyMetric
-    .upsert({
-      where: { launcherId_day: { launcherId, day } },
-      create: { launcherId, day, manifestLoads: 1 },
-      update: { manifestLoads: { increment: 1 } },
-    })
-    .catch((error) => {
-      console.error("Launcher metric update failed", {
-        launcherId,
-        error: String(error),
-      });
-    });
-}
-
 // Le launcher Electron fait des requêtes cross-origin : on autorise.
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });
@@ -81,6 +55,8 @@ function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
+    // Conservé pour compatibilité avec les versions desktop déjà publiées.
+    // Cet en-tête n'est volontairement pas considéré comme une preuve fiable.
     "Access-Control-Allow-Headers": "Accept, X-YourLauncher-Client",
     "Cache-Control": "no-store",
   };

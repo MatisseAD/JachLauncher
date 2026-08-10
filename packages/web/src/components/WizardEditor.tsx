@@ -24,6 +24,7 @@ import { fetchReleaseVersions, FALLBACK_VERSIONS } from "@/lib/mc-versions";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getGuideContent } from "@/i18n/guide-content";
 import { getWizardCopy } from "@/i18n/wizard-content";
+import { LatestSaveQueue } from "@/lib/latest-save-queue";
 
 const STEPS: {
   short: string;
@@ -261,46 +262,57 @@ export default function WizardEditor({
   const [generated, setGenerated] = useState(false);
 
   const mounted = useRef(false);
-  const inFlight = useRef<Promise<string | null> | null>(null);
+  const canUpdateUi = useRef(true);
+  const dataRef = useRef(data);
+  const launcherIdRef = useRef(data.id ?? null);
+  const editVersion = useRef(0);
+  const queuedVersion = useRef(0);
+  const latestRequest = useRef(0);
   const blockedSlug = useRef<string | null>(null);
   const stageRef = useRef<HTMLElement>(null);
+  const saveQueue = useRef<LatestSaveQueue<
+    {
+      payload: ReturnType<typeof sanitize>;
+      requestId: number;
+      keepalive: boolean;
+    },
+    string | null
+  > | null>(null);
 
-  function set<K extends keyof LauncherFormData>(
-    key: K,
-    value: LauncherFormData[K],
-  ) {
-    setStepError("");
-    setData((d) => ({ ...d, [key]: value }));
-  }
-  function patch(p: Partial<LauncherFormData>) {
-    setStepError("");
-    setData((d) => ({ ...d, ...p }));
-  }
+  if (!saveQueue.current) {
+    saveQueue.current = new LatestSaveQueue(async (request) => {
+      const isLatestRequest = () => request.requestId === latestRequest.current;
+      const updateUi = (callback: () => void) => {
+        if (canUpdateUi.current && isLatestRequest()) callback();
+      };
+      const launcherId = launcherIdRef.current ?? request.payload.id ?? null;
 
-  // --- Sauvegarde automatique (debounce) ---
-  async function persist(): Promise<string | null> {
-    if (inFlight.current) return inFlight.current;
-    const payload = sanitize(data);
-    const operation = (async (): Promise<string | null> => {
-      if (!data.id) {
+      if (blockedSlug.current === request.payload.slug) {
+        updateUi(() => {
+          setSave("error");
+          setSaveError("Ce code de launcher est déjà utilisé.");
+        });
+        return null;
+      }
+
+      if (!launcherId) {
         if (
-          !payload.title.trim() ||
-          !/^[a-z0-9-]{3,40}$/.test(payload.slug) ||
-          blockedSlug.current === payload.slug
+          !request.payload.title.trim() ||
+          !/^[a-z0-9-]{3,40}$/.test(request.payload.slug)
         ) {
+          updateUi(() => setSave("idle"));
           return null;
         }
       }
 
-      setSave("saving");
-      setSaveError("");
       try {
         const response = await fetch(
-          data.id ? `/api/launchers/${data.id}` : "/api/launchers",
+          launcherId ? `/api/launchers/${launcherId}` : "/api/launchers",
           {
-            method: data.id ? "PUT" : "POST",
+            method: launcherId ? "PUT" : "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(request.payload),
+            keepalive: request.keepalive,
           },
         );
         const json = (await response.json().catch(() => ({}))) as {
@@ -308,38 +320,90 @@ export default function WizardEditor({
           error?: string;
         };
         if (!response.ok) {
-          setSave("error");
-          setSaveError(json.error ?? "Erreur de sauvegarde");
-          if (response.status === 409) blockedSlug.current = payload.slug;
+          if (
+            response.status === 409 &&
+            json.error?.toLowerCase().includes("slug")
+          ) {
+            blockedSlug.current = request.payload.slug;
+          }
+          updateUi(() => {
+            setSave("error");
+            setSaveError(json.error ?? "Erreur de sauvegarde");
+          });
           return null;
         }
-        const launcherId = data.id ?? json.id ?? null;
-        if (!launcherId) {
-          setSave("error");
-          setSaveError("Identifiant absent de la réponse.");
+
+        const savedLauncherId = launcherId ?? json.id ?? null;
+        if (!savedLauncherId) {
+          updateUi(() => {
+            setSave("error");
+            setSaveError("Identifiant absent de la réponse.");
+          });
           return null;
         }
-        if (!data.id) {
-          setData((current) => ({ ...current, id: launcherId }));
-          window.history.replaceState(null, "", `/dashboard/${launcherId}`);
+
+        if (!launcherIdRef.current) {
+          launcherIdRef.current = savedLauncherId;
+          const withId = { ...dataRef.current, id: savedLauncherId };
+          dataRef.current = withId;
+          if (canUpdateUi.current) {
+            setData(withId);
+            window.history.replaceState(
+              null,
+              "",
+              `/dashboard/${savedLauncherId}`,
+            );
+          }
         }
         blockedSlug.current = null;
-        setSave("saved");
-        return launcherId;
+        updateUi(() => setSave("saved"));
+        return savedLauncherId;
       } catch (error) {
-        setSave("error");
-        setSaveError(
-          error instanceof Error ? error.message : "Connexion impossible",
-        );
+        updateUi(() => {
+          setSave("error");
+          setSaveError(
+            error instanceof Error ? error.message : "Connexion impossible",
+          );
+        });
         return null;
       }
-    })();
-    inFlight.current = operation;
-    try {
-      return await operation;
-    } finally {
-      if (inFlight.current === operation) inFlight.current = null;
+    });
+  }
+
+  function set<K extends keyof LauncherFormData>(
+    key: K,
+    value: LauncherFormData[K],
+  ) {
+    setStepError("");
+    editVersion.current += 1;
+    const next = { ...dataRef.current, [key]: value };
+    dataRef.current = next;
+    setData(next);
+  }
+  function patch(p: Partial<LauncherFormData>) {
+    setStepError("");
+    editVersion.current += 1;
+    const next = { ...dataRef.current, ...p };
+    dataRef.current = next;
+    setData(next);
+  }
+
+  // --- Sauvegarde automatique (debounce) ---
+  function persist(options: { keepalive?: boolean; silent?: boolean } = {}) {
+    queuedVersion.current = Math.max(
+      queuedVersion.current,
+      editVersion.current,
+    );
+    const requestId = ++latestRequest.current;
+    if (!options.silent && canUpdateUi.current) {
+      setSave("saving");
+      setSaveError("");
     }
+    return saveQueue.current!.enqueue({
+      payload: sanitize(dataRef.current),
+      requestId,
+      keepalive: options.keepalive ?? false,
+    });
   }
 
   useEffect(() => {
@@ -347,9 +411,26 @@ export default function WizardEditor({
       mounted.current = true;
       return;
     }
-    const t = setTimeout(persist, 900);
+    if (editVersion.current <= queuedVersion.current) return;
+    setSave("saving");
+    const t = setTimeout(() => void persist(), 900);
     return () => clearTimeout(t);
   }, [data]);
+
+  useEffect(() => {
+    const flushPendingSave = () => {
+      if (editVersion.current > queuedVersion.current) {
+        void persist({ keepalive: true, silent: true });
+      }
+    };
+
+    window.addEventListener("pagehide", flushPendingSave);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSave);
+      flushPendingSave();
+      canUpdateUi.current = false;
+    };
+  }, []);
 
   async function applyPreset(presetId: string) {
     const preset = PRESETS.find((p) => p.id === presetId);

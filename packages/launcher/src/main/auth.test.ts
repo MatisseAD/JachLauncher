@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { offlineUuid, setOfflineAccount } from "./auth";
+import { offlineUuid, resolveAzureClientId, setOfflineAccount } from "./auth";
 
 describe("authentification hors ligne", () => {
   it("génère un UUID v3 déterministe", () => {
@@ -13,5 +13,23 @@ describe("authentification hors ligne", () => {
     expect(setOfflineAccount("Player_01").ok).toBe(true);
     expect(setOfflineAccount("../evil").ok).toBe(false);
     expect(setOfflineAccount("ab").ok).toBe(false);
+  });
+
+  it("préfère le client ID Azure fourni au runtime", () => {
+    const runtime = "11111111-1111-4111-8111-111111111111";
+    const bundled = "22222222-2222-4222-8222-222222222222";
+    expect(resolveAzureClientId(runtime, bundled)).toBe(runtime);
+  });
+
+  it("utilise le client ID embarqué dans un build packagé", () => {
+    const bundled = "22222222-2222-4222-8222-222222222222";
+    expect(resolveAzureClientId(undefined, bundled)).toBe(bundled);
+    expect(resolveAzureClientId(undefined, undefined)).toBeNull();
+  });
+
+  it("refuse un client ID Azure mal formé", () => {
+    expect(() => resolveAzureClientId("pas-un-guid", undefined)).toThrow(
+      /format GUID/,
+    );
   });
 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { MAX_LAUNCHERS_PER_USER } from "@/lib/launcher-limits";
+import { isManagedUpload } from "@/lib/storage";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -50,6 +51,12 @@ export async function POST(_req: Request, { params }: Ctx) {
   const copy = await prisma.launcher.create({
     data: {
       ...rest,
+      // Les fichiers gérés appartiennent à l'espace du launcher source. Une
+      // copie ne doit pas partager un objet qui disparaîtra avec sa suppression.
+      logoUrl: isManagedUpload(src.logoUrl, src.id) ? null : src.logoUrl,
+      backgroundUrl: isManagedUpload(src.backgroundUrl, src.id)
+        ? null
+        : src.backgroundUrl,
       slug,
       title: `${title} (copie)`.slice(0, 60),
       status: "draft",

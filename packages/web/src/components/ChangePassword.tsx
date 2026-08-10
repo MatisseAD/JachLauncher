@@ -60,7 +60,8 @@ export default function ChangePassword() {
           value={next}
           onChange={(e) => setNext(e.target.value)}
           autoComplete="new-password"
-          placeholder="6 caractères minimum"
+          minLength={8}
+          placeholder={copy.hint}
         />
         <div className="hint">{copy.hint}</div>
       </div>

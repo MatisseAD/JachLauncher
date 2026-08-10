@@ -108,10 +108,11 @@ npm run dev:launcher
 Le site écoute sur `http://localhost:3000`. Dans le launcher, saisis cette
 adresse et le code `serveur-demo`, puis approuve l’empreinte affichée.
 
-L’éditeur web comporte sept étapes : informations, apparence, Minecraft, contenu,
-actualités, communauté et aperçu/publication. Chaque fichier téléchargeable doit
-avoir son nom final, son URL directe, sa taille en octets et son SHA-256. La
-publication attend la fin de la sauvegarde et refuse les lignes incomplètes.
+L’éditeur web comporte neuf étapes : modèle, identité, design, Minecraft,
+contenu, actualités, communauté, serveur et publication. Chaque fichier
+téléchargeable doit avoir son nom final, son URL directe, sa taille en octets et
+son SHA-256. La publication attend la fin de la sauvegarde et refuse les lignes
+incomplètes.
 
 La navigation publique du site possède six dictionnaires (FR, EN, ES, DE, PT,
 IT). Les écrans métier détaillés de l’éditeur et le launcher desktop restent en
@@ -159,9 +160,11 @@ vérifie la page d’accueil et un manifeste v2.
 npm run package --workspace=@jach/launcher
 ```
 
-Les artefacts sont écrits dans `packages/launcher/release`. Pour une diffusion
-publique, configure aussi la signature de code Windows/macOS et un mécanisme de
-mise à jour ; ils ne sont pas fournis par ce dépôt.
+Les artefacts sont écrits dans `packages/launcher/release`. Le launcher inclut
+la mise à jour automatique via `electron-updater` : `npm run release:publish`
+publie l’installateur, son blockmap et `latest.yml` sur le canal Vercel Blob
+configuré (avec `BLOB_READ_WRITE_TOKEN`). Pour une diffusion publique, configure
+aussi la signature de code Windows/macOS.
 
 ## Déploiement
 

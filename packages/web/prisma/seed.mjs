@@ -1,24 +1,51 @@
 // Seed : crée un compte démo + des launchers d'exemple.
-// Utile pour une base fraîche (local Postgres ou prod). Idempotent.
+// Utile pour une base fraîche. En production, un opt-in explicite est requis.
 //   node prisma/seed.mjs   (ou: npm run db:seed)
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const password = await bcrypt.hash("secret123", 10);
+  const production = process.env.NODE_ENV === "production";
+  if (production && process.env.ALLOW_DEMO_SEED !== "true") {
+    throw new Error(
+      "Seed de démonstration refusé en production. Définis ALLOW_DEMO_SEED=true pour confirmer explicitement.",
+    );
+  }
+
+  const configuredPassword = process.env.DEMO_PASSWORD?.trim();
+  if (configuredPassword && configuredPassword.length < 12) {
+    throw new Error("DEMO_PASSWORD doit contenir au moins 12 caractères.");
+  }
+
+  const generatedPassword = crypto.randomBytes(24).toString("base64url");
+  const plainPassword = configuredPassword || generatedPassword;
+  const password = await bcrypt.hash(plainPassword, 12);
   const user = await prisma.user.upsert({
     where: { username: "demo" },
-    update: {},
+    // Chaque seed révoque aussi un éventuel ancien identifiant de démonstration
+    // connu. Sans DEMO_PASSWORD, un nouveau secret fort est donc généré.
+    update: { password },
     create: { username: "demo", password },
   });
-  console.log("Utilisateur démo : demo / secret123");
+  if (configuredPassword) {
+    console.log("Utilisateur démo configuré via DEMO_PASSWORD : demo");
+  } else if (!production) {
+    console.log(
+      `Utilisateur démo configuré avec un mot de passe aléatoire : demo / ${generatedPassword}`,
+    );
+  } else {
+    console.log(
+      "Utilisateur démo sécurisé avec un mot de passe aléatoire non affiché en production.",
+    );
+  }
 
   const launchers = [
     {
-      slug: "serveur-demo",
-      title: "Serveur Demo",
+      slug: "seed-fabric-demo",
+      title: "Exemple Fabric du seed",
       description: "Un launcher d'exemple Fabric.",
       status: "published",
       primaryColor: "#8b5cf6",

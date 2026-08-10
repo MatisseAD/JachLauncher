@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { saveUpload } from "@/lib/storage";
+import {
+  consumeUserUploadQuota,
+  MAX_USER_UPLOAD_BYTES_PER_DAY,
+  MAX_USER_UPLOADS_PER_DAY,
+} from "@/lib/upload-quota";
+import { consumeRateLimit } from "@/lib/rate-limit";
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8 Mo
 const EXTENSIONS: Record<string, string> = {
@@ -13,6 +19,12 @@ const EXTENSIONS: Record<string, string> = {
 
 // POST /api/upload (multipart) — champs: launcherId, kind (logo|background), file.
 export async function POST(req: Request) {
+  if (!consumeRateLimit(req, "asset-upload", 60, 60 * 60_000)) {
+    return NextResponse.json(
+      { error: "Trop d’envois, réessaie plus tard" },
+      { status: 429 },
+    );
+  }
   const session = await getSession();
   if (!session)
     return NextResponse.json({ error: "Non connecté" }, { status: 401 });
@@ -61,20 +73,35 @@ export async function POST(req: Request) {
       { status: 415 },
     );
   }
+  let quotaAvailable: boolean;
+  try {
+    quotaAvailable = await consumeUserUploadQuota(session.userId, file.size);
+  } catch (error) {
+    console.error("Upload quota unavailable", error);
+    return NextResponse.json(
+      { error: "Le service d’upload est temporairement indisponible" },
+      { status: 503 },
+    );
+  }
+  if (!quotaAvailable) {
+    return NextResponse.json(
+      {
+        error: `Quota atteint (${MAX_USER_UPLOADS_PER_DAY} fichiers ou ${Math.floor(MAX_USER_UPLOAD_BYTES_PER_DAY / 1024 / 1024)} Mo par jour).`,
+      },
+      { status: 429 },
+    );
+  }
+
   const { relativePath } = await saveUpload(
     launcherId,
     EXTENSIONS[file.type],
     buf,
   );
 
-  await prisma.launcher.update({
-    where: { id: launcherId },
-    data:
-      kind === "logo"
-        ? { logoUrl: relativePath }
-        : { backgroundUrl: relativePath },
-  });
-
+  // La référence est écrite par le PUT sérialisé de l'éditeur. Garder une seule
+  // voie d'écriture évite qu'une ancienne autosauvegarde rétablisse un asset
+  // déjà supprimé. Les objets non rattachés restent bornés par le quota et sont
+  // purgés avec le namespace du launcher.
   return NextResponse.json({ relativePath });
 }
 

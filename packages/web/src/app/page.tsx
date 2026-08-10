@@ -7,11 +7,12 @@ import { getDict, getLocale } from "@/i18n/server";
 import { getMarketingCopy } from "@/i18n/marketing-content";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { DEMO_SLUG } from "@/lib/demo-slugs";
 
 const showcase = [
   {
     name: "Nova Survival",
-    code: "nova-survival",
+    code: DEMO_SLUG.novaSurvival,
     type: 0,
     version: "1.21.8 · Fabric",
     players: 128,
@@ -19,7 +20,7 @@ const showcase = [
   },
   {
     name: "Elyria Origins",
-    code: "elyria-origins",
+    code: DEMO_SLUG.elyriaOrigins,
     type: 1,
     version: "1.20.1 · Forge",
     players: 64,
@@ -27,7 +28,7 @@ const showcase = [
   },
   {
     name: "Block District",
-    code: "block-district",
+    code: DEMO_SLUG.blockDistrict,
     type: 2,
     version: "1.21.5 · Vanilla",
     players: null,
@@ -87,7 +88,7 @@ export default async function Home() {
                   <UiIcon name="arrow" size={18} />
                 </Link>
                 <Link
-                  href="/preview/serveur-demo"
+                  href={`/preview/${DEMO_SLUG.yourLauncher}`}
                   className="btn secondary lg"
                   target="_blank"
                 >

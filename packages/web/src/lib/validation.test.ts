@@ -34,4 +34,20 @@ describe("validation de l'éditeur", () => {
       }).success,
     ).toBe(false);
   });
+
+  it.each([
+    "serveur-demo",
+    "nova-survival",
+    "elyria-origins",
+    "block-district",
+  ])("réserve le slug de démonstration %s", (slug) => {
+    expect(
+      LauncherInputSchema.safeParse({
+        title: "Serveur",
+        slug,
+        mcVersion: "1.21.1",
+      }).success,
+    ).toBe(false);
+    expect(LauncherUpdateSchema.safeParse({ slug }).success).toBe(false);
+  });
 });

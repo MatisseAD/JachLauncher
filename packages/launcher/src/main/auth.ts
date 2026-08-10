@@ -1,6 +1,15 @@
 import crypto from "node:crypto";
 import type { Account, AuthResult } from "../shared-types/ipc";
 
+declare const __JACH_AZURE_CLIENT_ID__: string | undefined;
+
+const AZURE_CLIENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const BUNDLED_AZURE_CLIENT_ID =
+  typeof __JACH_AZURE_CLIENT_ID__ === "string"
+    ? __JACH_AZURE_CLIENT_ID__
+    : undefined;
+
 /** Données d'autorisation adaptées aux options de lancement XMCL. */
 export interface MinecraftAuthorization {
   access_token: string;
@@ -13,6 +22,24 @@ export interface MinecraftAuthorization {
 
 // Autorisation courante en mémoire (jamais persistée : contient des tokens).
 let currentAuth: MinecraftAuthorization | null = null;
+
+/**
+ * L'environnement reste prioritaire pour le développement. En production,
+ * electron-vite remplace la constante par l'identifiant public validé au build.
+ */
+export function resolveAzureClientId(
+  runtimeClientId: string | undefined = process.env.JACH_AZURE_CLIENT_ID,
+  bundledClientId: string | undefined = BUNDLED_AZURE_CLIENT_ID,
+): string | null {
+  const clientId = (runtimeClientId?.trim() || bundledClientId?.trim()) ?? "";
+  if (!clientId) return null;
+  if (!AZURE_CLIENT_ID_PATTERN.test(clientId)) {
+    throw new Error(
+      "JACH_AZURE_CLIENT_ID invalide : un identifiant d’application Azure au format GUID est attendu.",
+    );
+  }
+  return clientId;
+}
 
 /**
  * UUID hors-ligne déterministe, identique à l'algorithme de Minecraft :
@@ -62,12 +89,12 @@ export async function loginMicrosoft(): Promise<AuthResult> {
     // Import dynamique : msmc est un module ESM, on évite un require() CJS.
     const { Auth } = await import("msmc");
 
-    const clientId = process.env.JACH_AZURE_CLIENT_ID;
+    const clientId = resolveAzureClientId();
     if (!clientId) {
       return {
         ok: false,
         error:
-          "Connexion Microsoft non configurée : définis JACH_AZURE_CLIENT_ID.",
+          "Connexion Microsoft non configurée dans cette version du launcher (JACH_AZURE_CLIENT_ID absent).",
       };
     }
     const authManager = new Auth({

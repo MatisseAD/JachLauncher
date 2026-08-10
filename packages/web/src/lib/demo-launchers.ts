@@ -4,6 +4,7 @@ import {
   type LauncherManifest,
 } from "@jach/shared";
 import { DEFAULT_FORM, type LauncherFormData } from "./launcher-types";
+import { DEMO_SLUG } from "./demo-slugs";
 
 function demo(
   slug: string,
@@ -30,7 +31,7 @@ function demo(
 }
 
 export const DEMO_LAUNCHERS: LauncherFormData[] = [
-  demo("serveur-demo", "YourLauncher Demo", {
+  demo(DEMO_SLUG.yourLauncher, "YourLauncher Demo", {
     description:
       "Une démonstration complète et interactive du launcher universel.",
     primaryColor: "#8b5cf6",
@@ -72,7 +73,7 @@ export const DEMO_LAUNCHERS: LauncherFormData[] = [
       },
     ],
   }),
-  demo("nova-survival", "Nova Survival", {
+  demo(DEMO_SLUG.novaSurvival, "Nova Survival", {
     description:
       "Un monde survie communautaire lumineux, moderne et accueillant.",
     primaryColor: "#8b5cf6",
@@ -105,7 +106,7 @@ export const DEMO_LAUNCHERS: LauncherFormData[] = [
       },
     ],
   }),
-  demo("elyria-origins", "Elyria Origins", {
+  demo(DEMO_SLUG.elyriaOrigins, "Elyria Origins", {
     description: "Une aventure modée dans un univers naturel et mystérieux.",
     primaryColor: "#10b981",
     secondaryColor: "#fbbf24",
@@ -143,7 +144,7 @@ export const DEMO_LAUNCHERS: LauncherFormData[] = [
       },
     ],
   }),
-  demo("block-district", "Block District", {
+  demo(DEMO_SLUG.blockDistrict, "Block District", {
     description: "Mini-jeux rapides, compétitifs et immédiatement accessibles.",
     primaryColor: "#2563eb",
     secondaryColor: "#22d3ee",

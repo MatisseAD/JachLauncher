@@ -63,10 +63,6 @@ export default async function DashboardPage() {
         shaderpacks: true,
         news: true,
         updatedAt: true,
-        dailyMetrics: {
-          where: { day: { gte: startDay } },
-          select: { day: true, manifestLoads: true },
-        },
       },
     }),
     prisma.user.findUnique({
@@ -94,20 +90,18 @@ export default async function DashboardPage() {
 
   const activity = Array.from({ length: 7 }, (_, index) => {
     const day = new Date(startDay.getTime() + index * DAY_MS);
-    const value = rows.reduce(
-      (sum, launcher) =>
-        sum +
-        launcher.dailyMetrics
-          .filter((metric) => metric.day.getTime() === day.getTime())
-          .reduce((metricSum, metric) => metricSum + metric.manifestLoads, 0),
-      0,
-    );
+    const nextDay = new Date(day.getTime() + DAY_MS);
+    const value = rows.filter(
+      (launcher) =>
+        launcher.updatedAt.getTime() >= day.getTime() &&
+        launcher.updatedAt.getTime() < nextDay.getTime(),
+    ).length;
     return {
       label: day.toLocaleDateString(locale, { weekday: "short" }).slice(0, 2),
       value,
     };
   });
-  const totalLoads = activity.reduce((sum, day) => sum + day.value, 0);
+  const totalActivity = activity.reduce((sum, day) => sum + day.value, 0);
   const maxActivity = Math.max(...activity.map((day) => day.value), 1);
   const quotaPercent = Math.round(
     (launchers.length / MAX_LAUNCHERS_PER_USER) * 100,
@@ -174,7 +168,7 @@ export default async function DashboardPage() {
           </span>
           <div>
             <span className="metric-label">{copy.loads}</span>
-            <strong>{totalLoads}</strong>
+            <strong>{totalActivity}</strong>
             <small>{copy.appSevenDays}</small>
           </div>
         </article>
@@ -200,7 +194,7 @@ export default async function DashboardPage() {
             <span className="trend-badge">{copy.sevenDays}</span>
           </div>
           <div className="chart-summary">
-            <strong>{totalLoads}</strong>
+            <strong>{totalActivity}</strong>
             <span>{copy.configOpenings}</span>
           </div>
           <div className="activity-chart">

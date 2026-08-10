@@ -33,6 +33,7 @@ import { setupAutoUpdates } from "./updater";
 let mainWindow: BrowserWindow | null = null;
 let state: LauncherState;
 let currentManifest: LauncherManifest | null = null;
+let currentManifestBaseUrl: string | null = null;
 let pendingManifest: {
   manifest: LauncherManifest;
   baseUrl: string;
@@ -109,6 +110,7 @@ async function activateManifest(
 ): Promise<LoadManifestResult> {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
   currentManifest = manifest;
+  currentManifestBaseUrl = normalizedBaseUrl;
   pendingManifest = null;
   state.baseUrl = normalizedBaseUrl;
   state.slug = manifest.id;
@@ -217,10 +219,11 @@ function registerIpc(): void {
     if (
       removed &&
       currentManifest?.id === removed.slug &&
-      state.baseUrl === removed.baseUrl
+      currentManifestBaseUrl === removed.baseUrl
     ) {
       state.slug = null;
       currentManifest = null;
+      currentManifestBaseUrl = null;
     }
     await saveState(state);
     return state.launchers;
@@ -249,10 +252,12 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("game:status", async () =>
-    currentManifest ? getInstanceStatus(currentManifest) : "first-install",
+    currentManifest && currentManifestBaseUrl
+      ? getInstanceStatus(currentManifest, currentManifestBaseUrl)
+      : "first-install",
   );
   ipcMain.handle("game:launch", async () => {
-    if (!currentManifest) {
+    if (!currentManifest || !currentManifestBaseUrl) {
       return { ok: false, error: "Aucun launcher chargé." };
     }
     if (busyOperation) {
@@ -261,7 +266,13 @@ function registerIpc(): void {
     busyOperation = "launch";
     lastError = null;
     try {
-      await launchGame(currentManifest, state.settings, emitProgress, emitLog);
+      await launchGame(
+        currentManifest,
+        currentManifestBaseUrl,
+        state.settings,
+        emitProgress,
+        emitLog,
+      );
       if (state.settings.closeOnLaunch) {
         setTimeout(() => mainWindow?.close(), 250);
       } else if (state.settings.minimizeOnLaunch) {
@@ -284,7 +295,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.handle("game:repair", async () => {
-    if (!currentManifest) {
+    if (!currentManifest || !currentManifestBaseUrl) {
       return { ok: false, error: "Aucun launcher chargé." };
     }
     if (busyOperation) {
@@ -292,7 +303,12 @@ function registerIpc(): void {
     }
     busyOperation = "repair";
     try {
-      await repairInstance(currentManifest.id, emitProgress, emitLog);
+      await repairInstance(
+        currentManifestBaseUrl,
+        currentManifest.id,
+        emitProgress,
+        emitLog,
+      );
       return { ok: true };
     } catch (error) {
       return { ok: false, error: String(error) };

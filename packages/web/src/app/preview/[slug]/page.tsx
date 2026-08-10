@@ -15,10 +15,12 @@ type Props = { params: Promise<{ slug: string }> };
 // Page d'aperçu plein écran, publique (sert aussi de "Voir un exemple").
 export default async function PreviewPage({ params }: Props) {
   const { slug } = await params;
-  const l = await prisma.launcher
-    .findUnique({ where: { slug } })
-    .catch(() => null);
   const demo = getDemoLauncher(slug);
+  // Une démo intégrée reste prioritaire même si une ancienne base contient
+  // encore une ligne ayant le même slug désormais réservé.
+  const l = demo
+    ? null
+    : await prisma.launcher.findUnique({ where: { slug } }).catch(() => null);
   if (!l && !demo) notFound();
   const session = await getSession();
   const locale = await getLocale();

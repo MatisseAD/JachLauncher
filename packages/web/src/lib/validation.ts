@@ -16,6 +16,7 @@ import {
   SafeSlugSchema,
   VersionIdSchema,
 } from "@jach/shared";
+import { isDemoSlug } from "./demo-slugs";
 
 // Schéma d'entrée du formulaire d'édition d'un launcher (côté site).
 // Tout est requis à la création ; partiel à l'update.
@@ -34,10 +35,15 @@ const StoredAsset = z.union([
     ),
 ]);
 
+const AvailableSlugSchema = SafeSlugSchema.refine(
+  (slug) => !isDemoSlug(slug),
+  "Ce code est réservé à une démonstration intégrée",
+);
+
 const LauncherInputBaseSchema = z.object({
   // Méta
   title: z.string().min(1).max(60),
-  slug: SafeSlugSchema,
+  slug: AvailableSlugSchema,
   description: z.string().max(280).default(""),
   status: LauncherStatusSchema.default("draft"),
   favorite: z.boolean().default(false),

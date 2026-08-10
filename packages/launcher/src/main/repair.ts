@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LaunchProgress } from "../shared-types/ipc";
-import { minecraftRoot } from "./store";
+import { ensureMinecraftRoot } from "./store";
 import { clearInstanceMetadata } from "./instance";
 import { removeManagedContent } from "./launch";
 
@@ -14,11 +14,12 @@ type Log = (line: string) => void;
  * lancement. Conserve la version vanilla, les libs et assets (gros volume).
  */
 export async function repairInstance(
+  baseUrl: string,
   slug: string,
   emit: Emit,
   log: Log,
 ): Promise<void> {
-  const root = minecraftRoot(slug);
+  const root = await ensureMinecraftRoot(baseUrl, slug);
   emit({
     phase: "downloading",
     label: "Réparation : nettoyage des fichiers…",
@@ -26,7 +27,7 @@ export async function repairInstance(
   });
 
   await removeManagedContent(root, log);
-  await clearInstanceMetadata(slug);
+  await clearInstanceMetadata(baseUrl, slug);
 
   // Supprime les profils de loader custom (fabric-loader-*, quilt-*, forge-*…)
   // pour forcer leur réinstallation. La version vanilla est conservée.

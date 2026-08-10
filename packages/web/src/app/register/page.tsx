@@ -108,7 +108,8 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
-                placeholder="6 caractères minimum"
+                minLength={8}
+                placeholder={t.auth.passwordHint}
               />
               <div className="hint">{t.auth.passwordHint}</div>
             </div>

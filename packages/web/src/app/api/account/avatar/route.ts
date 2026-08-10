@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { consumeRateLimit } from "@/lib/rate-limit";
-import { saveUpload } from "@/lib/storage";
+import { deleteUpload, saveUpload } from "@/lib/storage";
+import {
+  consumeUserUploadQuota,
+  MAX_USER_UPLOAD_BYTES_PER_DAY,
+  MAX_USER_UPLOADS_PER_DAY,
+} from "@/lib/upload-quota";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const EXTENSIONS: Record<string, string> = {
@@ -12,7 +17,7 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
-  if (!consumeRateLimit(req, "avatar-upload", 10, 60 * 60_000)) {
+  if (!consumeRateLimit(req, "asset-upload", 60, 60 * 60_000)) {
     return NextResponse.json(
       { error: "Trop d’envois, réessaie plus tard" },
       { status: 429 },
@@ -50,14 +55,56 @@ export async function POST(req: Request) {
     );
   }
 
-  const { relativePath } = await saveUpload(
-    `avatar-${session.userId}`,
-    extension,
-    data,
-  );
-  await prisma.user.update({
+  let quotaAvailable: boolean;
+  try {
+    quotaAvailable = await consumeUserUploadQuota(session.userId, file.size);
+  } catch (error) {
+    console.error("Avatar upload quota unavailable", error);
+    return NextResponse.json(
+      { error: "Le service d’upload est temporairement indisponible" },
+      { status: 503 },
+    );
+  }
+  if (!quotaAvailable) {
+    return NextResponse.json(
+      {
+        error: `Quota atteint (${MAX_USER_UPLOADS_PER_DAY} fichiers ou ${Math.floor(MAX_USER_UPLOAD_BYTES_PER_DAY / 1024 / 1024)} Mo par jour).`,
+      },
+      { status: 429 },
+    );
+  }
+
+  const user = await prisma.user.findUnique({
     where: { id: session.userId },
-    data: { avatarUrl: relativePath },
+    select: { avatarUrl: true },
+  });
+  if (!user) {
+    return NextResponse.json({ error: "Compte introuvable" }, { status: 404 });
+  }
+
+  const namespace = `avatar-${session.userId}`;
+  const { relativePath } = await saveUpload(namespace, extension, data);
+  try {
+    const updated = await prisma.user.updateMany({
+      where: { id: session.userId, avatarUrl: user.avatarUrl },
+      data: { avatarUrl: relativePath },
+    });
+    if (updated.count !== 1) {
+      await deleteUpload(relativePath, namespace);
+      return NextResponse.json(
+        { error: "L’avatar a changé entre-temps, réessaie." },
+        { status: 409 },
+      );
+    }
+  } catch (error) {
+    await deleteUpload(relativePath, namespace).catch((cleanupError) => {
+      console.error("New avatar cleanup failed", cleanupError);
+    });
+    throw error;
+  }
+
+  await deleteUpload(user.avatarUrl, namespace).catch((error) => {
+    console.error("Previous avatar cleanup failed", error);
   });
   return NextResponse.json({ ok: true, avatarUrl: relativePath });
 }

@@ -6,6 +6,8 @@ import {
   DEFAULT_SETTINGS,
   type LauncherState,
 } from "../shared-types/ipc";
+import { instancePathSegments } from "./instance-path";
+import { normalizeBaseUrl } from "./security";
 
 // Persistance simple en JSON dans le dossier userData d'Electron.
 // (Évite une dépendance ESM comme electron-store.)
@@ -122,7 +124,54 @@ export async function saveState(state: LauncherState): Promise<void> {
   await fs.writeFile(settingsPath(), JSON.stringify(state, null, 2), "utf8");
 }
 
-/** Répertoire d'installation des instances Minecraft. */
-export function minecraftRoot(slug: string): string {
-  return path.join(app.getPath("userData"), "instances", slug);
+/** Répertoire d'installation isolé par base de manifestes et par launcher. */
+export function minecraftRoot(baseUrl: string, slug: string): string {
+  return path.join(
+    app.getPath("userData"),
+    "instances",
+    ".by-origin",
+    ...instancePathSegments(baseUrl, slug),
+  );
+}
+
+/**
+ * Migre l'ancien dossier `instances/<slug>` uniquement pour l'origine publique
+ * historique. Un serveur tiers ne peut ainsi pas s'approprier une installation
+ * créée avant l'isolation par origine.
+ */
+export async function ensureMinecraftRoot(
+  baseUrl: string,
+  slug: string,
+): Promise<string> {
+  const target = minecraftRoot(baseUrl, slug);
+  try {
+    await fs.access(target);
+    return target;
+  } catch {
+    // Le nouveau dossier n'existe pas encore.
+  }
+
+  if (normalizeBaseUrl(baseUrl) !== normalizeBaseUrl(DEFAULT_BASE_URL)) {
+    return target;
+  }
+
+  const legacy = path.join(app.getPath("userData"), "instances", slug);
+  try {
+    await fs.access(legacy);
+  } catch {
+    return target;
+  }
+
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  try {
+    await fs.rename(legacy, target);
+  } catch (error) {
+    // Une autre opération peut avoir terminé la migration entre-temps.
+    try {
+      await fs.access(target);
+    } catch {
+      throw error;
+    }
+  }
+  return target;
 }

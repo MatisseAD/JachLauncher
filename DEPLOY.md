@@ -22,6 +22,8 @@ de bascule SQLite ni de `db push` pendant le build.
 | `NEXT_PUBLIC_APP_URL`               | oui        | origine HTTPS publique, par exemple `https://app.example.com`   |
 | `MANIFEST_SIGNING_PRIVATE_KEY`      | conseillé  | clé privée Ed25519 en base64 (`npm run key:generate`)           |
 | `BLOB_READ_WRITE_TOKEN`             | conseillé  | injecté par Vercel Blob ; sinon les uploads utilisent le disque |
+| `DEMO_PASSWORD`                     | seed seul  | mot de passe de démo d'au moins 12 caractères                   |
+| `ALLOW_DEMO_SEED`                   | seed prod  | doit valoir `true` pour autoriser explicitement le seed en prod |
 | `NEXT_PUBLIC_ADSENSE_CLIENT`        | non        | identifiant `ca-pub-…` pour charger AdSense                     |
 | `NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL` | non        | URL HTTPS de l’installateur desktop affichée dans le dashboard  |
 
@@ -85,14 +87,16 @@ DATABASE_URL="postgresql://…" npm run db:status --workspace=@jach/web
 DIRECT_URL="postgresql://…" npm run db:deploy --workspace=@jach/web
 ```
 
-Le seed est réservé à une démo :
+Le seed est réservé à une démo. Sans `DEMO_PASSWORD`, il génère et affiche un
+mot de passe aléatoire fort en développement :
 
 ```bash
 DATABASE_URL="postgresql://…" npm run db:seed --workspace=@jach/web
 ```
 
-Il crée des identifiants publics connus. Ne l’exécute pas en production réelle,
-ou supprime immédiatement le compte `demo`.
+Il refuse de s’exécuter avec `NODE_ENV=production` sans l'opt-in
+`ALLOW_DEMO_SEED=true`. En production, fournis aussi `DEMO_PASSWORD` via le
+gestionnaire de secrets afin de ne jamais écrire le mot de passe dans les logs.
 
 ## 5. Images
 
@@ -101,7 +105,9 @@ renvoie une URL persistante. Sans ce jeton, le stockage local convient au
 développement mais pas aux fonctions serverless éphémères.
 
 Les uploads sont limités à 8 Mio et aux signatures PNG, JPEG, GIF ou WebP. SVG
-est volontairement refusé.
+est volontairement refusé. Le quota partagé est de 30 fichiers ou 64 Mio par
+compte et par jour. Les anciens objets gérés sont supprimés lors d'un
+remplacement, et tout le namespace d'un launcher est purgé avec sa suppression.
 
 ## 6. Contrôles avant promotion
 

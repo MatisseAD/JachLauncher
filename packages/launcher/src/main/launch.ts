@@ -27,7 +27,7 @@ import {
   manifestFingerprint,
   resolveInside,
 } from "./security";
-import { minecraftRoot } from "./store";
+import { ensureMinecraftRoot } from "./store";
 
 type Emit = (progress: LaunchProgress) => void;
 type Log = (line: string) => void;
@@ -410,6 +410,7 @@ async function installGame(
 /** Prépare intégralement l'instance puis démarre le processus Minecraft. */
 export async function launchGame(
   manifest: LauncherManifest,
+  baseUrl: string,
   settings: LauncherSettings,
   emit: Emit,
   log: Log,
@@ -417,7 +418,7 @@ export async function launchGame(
   const auth = getCurrentAuth();
   if (!auth) throw new Error("Aucun compte connecté.");
 
-  const root = minecraftRoot(manifest.id);
+  const root = await ensureMinecraftRoot(baseUrl, manifest.id);
   await fs.mkdir(root, { recursive: true });
 
   const javaPath = (await ensureJava(manifest, emit, log)) ?? "java";
@@ -492,7 +493,7 @@ export async function launchGame(
       once(child, "error").then(([error]) => Promise.reject(error)),
     ]);
   }
-  await markInstanceInstalled(manifest, versionId);
+  await markInstanceInstalled(manifest, versionId, baseUrl);
   emit({ phase: "running", label: "Minecraft est lancé 🎮", percent: 100 });
   return child;
 }

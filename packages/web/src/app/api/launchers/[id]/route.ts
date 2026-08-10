@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { LauncherUpdateSchema } from "@/lib/validation";
 import { rowToForm, toUpdateData } from "@/lib/launcher-data";
 import { Prisma } from "@prisma/client";
+import { deleteUpload, deleteUploadNamespace } from "@/lib/storage";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -70,6 +71,21 @@ export async function PUT(req: Request, { params }: Ctx) {
       where: { id },
       data: toUpdateData(d),
     });
+    const cleanup: Promise<boolean>[] = [];
+    if (d.logoUrl !== undefined && d.logoUrl !== launcher.logoUrl) {
+      cleanup.push(deleteUpload(launcher.logoUrl, launcher.id));
+    }
+    if (
+      d.backgroundUrl !== undefined &&
+      d.backgroundUrl !== launcher.backgroundUrl
+    ) {
+      cleanup.push(deleteUpload(launcher.backgroundUrl, launcher.id));
+    }
+    await Promise.all(cleanup).catch((error) => {
+      // La mise à jour fonctionnelle est déjà validée ; un échec fournisseur ne
+      // doit pas la transformer en erreur, mais reste visible dans les logs.
+      console.error("Replaced launcher asset cleanup failed", error);
+    });
     return NextResponse.json({ ok: true, slug: updated.slug });
   } catch (error) {
     if (
@@ -97,5 +113,11 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     return NextResponse.json({ error: "Introuvable" }, { status: 404 });
 
   await prisma.launcher.delete({ where: { id } });
+  await deleteUploadNamespace(launcher.id).catch((error) => {
+    console.error("Deleted launcher asset cleanup failed", {
+      launcherId: launcher.id,
+      error,
+    });
+  });
   return NextResponse.json({ ok: true });
 }

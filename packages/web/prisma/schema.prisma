@@ -11,14 +11,15 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  username  String     @unique
-  email     String?    @unique
-  avatarUrl String?
-  password  String // hash bcrypt
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  launchers Launcher[]
+  id          String            @id @default(cuid())
+  username    String            @unique
+  email       String?           @unique
+  avatarUrl   String?
+  password    String // hash bcrypt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  launchers   Launcher[]
+  uploadUsage UserUploadUsage[]
 }
 
 model Launcher {
@@ -35,35 +36,35 @@ model Launcher {
   favorite    Boolean @default(false)
 
   // --- Branding / apparence ---
-  logoUrl        String?
-  backgroundUrl  String?
-  primaryColor   String  @default("#5b8cff")
-  secondaryColor String  @default("#00d18f")
-  textColor      String  @default("#e6edf3")
-  theme          String  @default("dark") // dark | light
-  visualStyle    String  @default("premium") // premium | dark | light | pixel | medieval | futuristic
-  buttonStyle    String  @default("glow") // glow | flat | pixel | outline
-  cardShape      String  @default("rounded") // rounded | sharp | pill
-  menuPlacement  String  @default("left") // left | top
-  backgroundFit      String @default("cover") // cover | contain | fill
-  backgroundPosition String @default("center") // center | top | bottom | left | right
-  backgroundOverlay  Int    @default(48) // 0..90
-  backgroundBlur     Int    @default(0) // 0..20 px
-  panelOpacity       Int    @default(72) // 20..100
-  fontFamily         String @default("poppins") // poppins | inter | system | serif | pixel
-  cornerRadius       Int    @default(14) // 0..32 px
-  contentDensity     String @default("comfortable") // compact | comfortable | spacious
-  sidebarStyle       String @default("glass") // glass | solid | floating
-  logoShape          String @default("rounded") // square | rounded | circle
-  playButtonLabel    String @default("JOUER")
+  logoUrl            String?
+  backgroundUrl      String?
+  primaryColor       String  @default("#5b8cff")
+  secondaryColor     String  @default("#00d18f")
+  textColor          String  @default("#e6edf3")
+  theme              String  @default("dark") // dark | light
+  visualStyle        String  @default("premium") // premium | dark | light | pixel | medieval | futuristic
+  buttonStyle        String  @default("glow") // glow | flat | pixel | outline
+  cardShape          String  @default("rounded") // rounded | sharp | pill
+  menuPlacement      String  @default("left") // left | top
+  backgroundFit      String  @default("cover") // cover | contain | fill
+  backgroundPosition String  @default("center") // center | top | bottom | left | right
+  backgroundOverlay  Int     @default(48) // 0..90
+  backgroundBlur     Int     @default(0) // 0..20 px
+  panelOpacity       Int     @default(72) // 20..100
+  fontFamily         String  @default("poppins") // poppins | inter | system | serif | pixel
+  cornerRadius       Int     @default(14) // 0..32 px
+  contentDensity     String  @default("comfortable") // compact | comfortable | spacious
+  sidebarStyle       String  @default("glass") // glass | solid | floating
+  logoShape          String  @default("rounded") // square | rounded | circle
+  playButtonLabel    String  @default("JOUER")
   showServerStatus   Boolean @default(true)
-  showNews       Boolean @default(true)
-  showDiscord    Boolean @default(false)
-  showWebsite    Boolean @default(false)
-  discordUrl     String?
-  websiteUrl     String?
-  supportUrl     String?
-  ambiance       String  @default("none") // none | fire | snow | stars | rain | glitch
+  showNews           Boolean @default(true)
+  showDiscord        Boolean @default(false)
+  showWebsite        Boolean @default(false)
+  discordUrl         String?
+  websiteUrl         String?
+  supportUrl         String?
+  ambiance           String  @default("none") // none | fire | snow | stars | rain | glitch
 
   // --- Minecraft ---
   mcVersion        String  @default("1.20.1")
@@ -90,15 +91,15 @@ model Launcher {
   alert         String @default("{\"active\":false,\"kind\":\"info\",\"message\":\"\"}")
   jvmArgs       String @default("[]")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
   dailyMetrics LauncherDailyMetric[]
 
   @@index([ownerId])
 }
 
-// Agrégat journalier minimal : aucune IP, aucun identifiant joueur.
-// Un chargement correspond à une configuration demandée par le launcher desktop.
+// Historique conservé pour compatibilité de migration. Les écritures basées sur
+// un simple en-tête desktop ont été désactivées car elles n'étaient pas fiables.
 model LauncherDailyMetric {
   id            String   @id @default(cuid())
   launcherId    String
@@ -108,4 +109,17 @@ model LauncherDailyMetric {
   updatedAt     DateTime @updatedAt
 
   @@unique([launcherId, day])
+}
+
+// Quota journalier partagé par toutes les instances et toutes les routes
+// d'upload. Aucune information sur les fichiers ou les visiteurs n'est stockée.
+model UserUploadUsage {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day       DateTime @db.Date
+  bytes     Int      @default(0)
+  uploads   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, day])
 }
