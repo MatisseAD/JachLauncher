@@ -12,6 +12,7 @@ import type {
   SavedLauncher,
   InstanceStatus,
   DesktopUpdateState,
+  DesktopUpdateActionResult,
 } from "../shared-types/ipc";
 
 const api: JachApi = {
@@ -35,9 +36,13 @@ const api: JachApi = {
     ipcRenderer.invoke("launchers:remove", slug) as Promise<SavedLauncher[]>,
   loginMicrosoft: () =>
     ipcRenderer.invoke("auth:microsoft") as Promise<AuthResult>,
+  cancelMicrosoftLogin: () =>
+    ipcRenderer.invoke("auth:microsoft:cancel") as Promise<boolean>,
   setOfflineAccount: (username) =>
     ipcRenderer.invoke("auth:offline", username) as Promise<AuthResult>,
   logout: () => ipcRenderer.invoke("auth:logout") as Promise<void>,
+  openAdminCenter: () =>
+    ipcRenderer.invoke("admin:openCenter") as Promise<void>,
   launch: () => ipcRenderer.invoke("game:launch") as Promise<LaunchResult>,
   repair: () =>
     ipcRenderer.invoke("game:repair") as Promise<{
@@ -72,11 +77,23 @@ const api: JachApi = {
     ipcRenderer.on("launch:log", listener);
     return () => ipcRenderer.removeListener("launch:log", listener);
   },
+  onAccountChanged: (cb) => {
+    const listener = (_e: unknown, account: LauncherState["account"]) =>
+      cb(account);
+    ipcRenderer.on("auth:accountChanged", listener);
+    return () => ipcRenderer.removeListener("auth:accountChanged", listener);
+  },
   onUpdateState: (cb: (state: DesktopUpdateState) => void) => {
     const listener = (_e: unknown, state: DesktopUpdateState) => cb(state);
     ipcRenderer.on("update:state", listener);
     return () => ipcRenderer.removeListener("update:state", listener);
   },
+  getUpdateState: () =>
+    ipcRenderer.invoke("update:getState") as Promise<DesktopUpdateState>,
+  checkForDesktopUpdate: () =>
+    ipcRenderer.invoke("update:check") as Promise<DesktopUpdateActionResult>,
+  installDesktopUpdate: () =>
+    ipcRenderer.invoke("update:install") as Promise<DesktopUpdateActionResult>,
 };
 
 contextBridge.exposeInMainWorld("jach", api);

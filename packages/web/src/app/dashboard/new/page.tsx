@@ -21,7 +21,7 @@ export default async function NewLauncherPage() {
     }),
     prisma.user.findUnique({
       where: { id: session.userId },
-      select: { username: true, avatarUrl: true },
+      select: { username: true, avatarUrl: true, role: true },
     }),
   ]);
 
@@ -29,6 +29,7 @@ export default async function NewLauncherPage() {
     <DashboardShell
       username={profile?.username ?? session.username}
       avatarUrl={assetUrl(profile?.avatarUrl)}
+      isAdmin={profile?.role === "admin"}
     >
       <section className="editor-heading">
         <div>

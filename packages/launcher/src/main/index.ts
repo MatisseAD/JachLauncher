@@ -9,14 +9,25 @@ import type {
   LoadManifestResult,
 } from "../shared-types/ipc";
 import {
+  cancelMicrosoftLogin,
   clearAuth,
+  clearMicrosoftSession,
+  ensureMicrosoftAuthorizationFresh,
+  getCurrentAuth,
   loginMicrosoft,
   rehydrateOffline,
+  restoreMicrosoftAccount,
   setOfflineAccount,
 } from "./auth";
 import { buildReport, classifyError } from "./diagnostics";
 import { getInstanceStatus } from "./instance";
+import { ADMIN_CENTER_URL, assertFixedAdminCenterUrl } from "./external-links";
+import {
+  checkLauncherAccess,
+  LauncherAccessPolicyError,
+} from "./launcher-access";
 import { launchGame } from "./launch";
+import { authorizationMatchesAccount } from "./launch-auth";
 import { fetchManifest } from "./manifest";
 import { repairInstance } from "./repair";
 import {
@@ -28,7 +39,7 @@ import {
 import { fetchServerStatus } from "./server-status";
 import { loadState, sanitizeSettings, saveState } from "./store";
 import { getSystemInfo } from "./system";
-import { setupAutoUpdates } from "./updater";
+import { setupAutoUpdates, type AutoUpdateController } from "./updater";
 
 let mainWindow: BrowserWindow | null = null;
 let state: LauncherState;
@@ -43,7 +54,8 @@ let pendingManifest: {
 let lastError: string | null = null;
 let busyOperation: "launch" | "repair" | null = null;
 const logBuffer: string[] = [];
-let stopAutoUpdates: (() => void) | null = null;
+let autoUpdates: AutoUpdateController | null = null;
+let authRevision = 0;
 
 function createWindow(): void {
   const iconPath = path.join(__dirname, "../../build/icon.png");
@@ -66,6 +78,9 @@ function createWindow(): void {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.once("closed", () => {
+    mainWindow = null;
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     try {
       void shell.openExternal(safeExternalUrl(url));
@@ -102,6 +117,10 @@ function emitLog(line: string): void {
   logBuffer.push(line);
   if (logBuffer.length > 200) logBuffer.shift();
   mainWindow?.webContents.send("launch:log", line);
+}
+
+function emitAccountState(): void {
+  mainWindow?.webContents.send("auth:accountChanged", state.account);
 }
 
 async function activateManifest(
@@ -230,26 +249,57 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("auth:microsoft", async () => {
-    const result = await loginMicrosoft();
+    const revision = ++authRevision;
+    emitLog("[auth] Ouverture de la connexion Microsoft dans le navigateur système.");
+    const result = await loginMicrosoft((stage) =>
+      emitLog(`[auth] Microsoft : ${stage}`),
+    );
+    if (revision !== authRevision) {
+      return { ok: false, error: "Connexion Microsoft annulée." };
+    }
     if (result.ok && result.account) {
       state.account = result.account;
       await saveState(state);
+      emitAccountState();
+      emitLog(`[auth] Compte Microsoft connecté : ${result.account.username}`);
+    } else {
+      emitLog(`[auth] ${result.error ?? "Connexion Microsoft refusée."}`);
     }
     return result;
   });
+  ipcMain.handle("auth:microsoft:cancel", () => cancelMicrosoftLogin());
   ipcMain.handle("auth:offline", async (_event, username: string) => {
+    ++authRevision;
+    try {
+      await clearMicrosoftSession();
+    } catch {
+      return {
+        ok: false,
+        error:
+          "Impossible de supprimer la session Microsoft chiffrée. Redémarre l'application puis réessaie.",
+      };
+    }
     const result = setOfflineAccount(username);
     if (result.ok && result.account) {
       state.account = result.account;
       await saveState(state);
+      emitAccountState();
     }
     return result;
   });
   ipcMain.handle("auth:logout", async () => {
+    ++authRevision;
+    await clearMicrosoftSession();
     clearAuth();
     state.account = null;
     await saveState(state);
+    emitAccountState();
   });
+
+  // URL volontairement fixe : le renderer ne peut choisir ni origine ni chemin.
+  ipcMain.handle("admin:openCenter", () =>
+    shell.openExternal(assertFixedAdminCenterUrl(ADMIN_CENTER_URL)),
+  );
 
   ipcMain.handle("game:status", async () =>
     currentManifest && currentManifestBaseUrl
@@ -260,18 +310,82 @@ function registerIpc(): void {
     if (!currentManifest || !currentManifestBaseUrl) {
       return { ok: false, error: "Aucun launcher chargé." };
     }
+    const manifest = currentManifest;
+    const manifestBaseUrl = currentManifestBaseUrl;
     if (busyOperation) {
       return { ok: false, error: "Une opération est déjà en cours." };
     }
     busyOperation = "launch";
     lastError = null;
     try {
+      if (!state.account) {
+        return {
+          ok: false,
+          error: "Aucun compte connecté.",
+          diagnostic: {
+            title: "Connexion requise",
+            message:
+              "Connecte un compte Microsoft ou hors-ligne avant de lancer le jeu.",
+          },
+        };
+      }
+      let account = state.account;
+      if (account.type === "microsoft") {
+        const revision = authRevision;
+        const expectedUuid = account.uuid;
+        const refreshed = await ensureMicrosoftAuthorizationFresh(
+          (stage) => emitLog(`[auth] Microsoft : ${stage}`),
+          () =>
+            revision === authRevision &&
+            state.account?.type === "microsoft" &&
+            state.account.uuid === expectedUuid,
+        );
+        if (!refreshed.ok || !refreshed.account) {
+          const message =
+            refreshed.error ??
+            "La session Microsoft doit être renouvelée avant le lancement.";
+          return {
+            ok: false,
+            error: message,
+            diagnostic: { title: "Reconnexion Microsoft requise", message },
+          };
+        }
+        account = refreshed.account;
+        state.account = account;
+        await saveState(state);
+        emitAccountState();
+      }
+      const assertAuthorizationMatchesAccount = () => {
+        if (
+          state.account?.type !== account.type ||
+          state.account.uuid !== account.uuid ||
+          state.account.username !== account.username ||
+          !authorizationMatchesAccount(getCurrentAuth(), account)
+        ) {
+          throw new Error(
+            "AUTH_SESSION_MISMATCH: le compte actif et le jeton de jeu ne correspondent plus. Déconnecte-toi puis reconnecte-toi.",
+          );
+        }
+      };
+      const verifyAccess = async (label: string) => {
+        assertAuthorizationMatchesAccount();
+        emitProgress({ phase: "manifest", label, percent: null });
+        const access = await checkLauncherAccess(
+          manifestBaseUrl,
+          manifest.id,
+          account,
+        );
+        if (!access.allowed) throw new LauncherAccessPolicyError(access);
+        assertAuthorizationMatchesAccount();
+      };
+      await verifyAccess("Vérification de ton autorisation…");
       await launchGame(
-        currentManifest,
-        currentManifestBaseUrl,
+        manifest,
+        manifestBaseUrl,
         state.settings,
         emitProgress,
         emitLog,
+        () => verifyAccess("Contrôle final de ton autorisation…"),
       );
       if (state.settings.closeOnLaunch) {
         setTimeout(() => mainWindow?.close(), 250);
@@ -280,6 +394,22 @@ function registerIpc(): void {
       }
       return { ok: true };
     } catch (error) {
+      if (error instanceof LauncherAccessPolicyError) {
+        lastError = `${error.code}: ${error.message}`;
+        emitLog(`ACCÈS REFUSÉ [${error.code}] : ${error.message}`);
+        const diagnostic = {
+          title: error.unavailable
+            ? "Autorisation invérifiable"
+            : "Accès au launcher refusé",
+          message: error.message,
+        };
+        emitProgress({
+          phase: "error",
+          label: diagnostic.title,
+          percent: null,
+        });
+        return { ok: false, error: error.message, diagnostic };
+      }
       const message = error instanceof Error ? error.message : String(error);
       lastError = message;
       emitLog(`ERREUR : ${message}`);
@@ -350,6 +480,47 @@ function registerIpc(): void {
     },
   );
 
+  ipcMain.handle(
+    "update:getState",
+    () =>
+      autoUpdates?.getState() ?? {
+        status: "disabled",
+        version: app.getVersion(),
+        message: "Le service de mise à jour n'est pas encore initialisé.",
+      },
+  );
+  ipcMain.handle(
+    "update:check",
+    () =>
+      autoUpdates?.check().then((result) => result) ??
+      Promise.resolve({
+        ok: false,
+        state: { status: "disabled", version: app.getVersion() } as const,
+        error: "Le service de mise à jour n'est pas encore initialisé.",
+      }),
+  );
+  ipcMain.handle("update:install", () => {
+    if (busyOperation) {
+      const state = autoUpdates?.getState() ?? {
+        status: "disabled" as const,
+        version: app.getVersion(),
+      };
+      return {
+        ok: false,
+        state,
+        error:
+          "Ferme le jeu ou attends la fin de l'opération avant d'installer.",
+      };
+    }
+    return (
+      autoUpdates?.install() ?? {
+        ok: false,
+        state: { status: "disabled" as const, version: app.getVersion() },
+        error: "Le service de mise à jour n'est pas encore initialisé.",
+      }
+    );
+  });
+
   ipcMain.on("win:minimize", () => mainWindow?.minimize());
   ipcMain.on("win:close", () => mainWindow?.close());
   ipcMain.on("win:toggleFullscreen", () => {
@@ -357,22 +528,65 @@ function registerIpc(): void {
   });
 }
 
-void app.whenReady().then(async () => {
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  void app.whenReady().then(async () => {
   state = await loadState();
-  if (state.account) rehydrateOffline(state.account);
+  const shouldRestoreMicrosoft = state.account?.type === "microsoft";
+  if (state.account?.type === "offline") {
+    rehydrateOffline(state.account);
+  } else {
+    // Les métadonnées persistées ne sont jamais exposées comme une session
+    // active avant validation silencieuse du cache MSAL chiffré.
+    state.account = null;
+  }
   registerIpc();
   createWindow();
-  stopAutoUpdates = setupAutoUpdates(() => mainWindow);
+  autoUpdates = setupAutoUpdates(() => mainWindow);
+  if (shouldRestoreMicrosoft) {
+    const revision = authRevision;
+    void restoreMicrosoftAccount(
+      (stage) => emitLog(`[auth] Microsoft : ${stage}`),
+      () => revision === authRevision,
+    ).then(async (result) => {
+      if (revision !== authRevision) return;
+      if (result.ok && result.account) {
+        state.account = result.account;
+        emitLog(
+          `[auth] Session Microsoft restaurée : ${result.account.username}`,
+        );
+      } else {
+        state.account = null;
+        emitLog(
+          `[auth] Session Microsoft non restaurée : ${result.error ?? "reconnexion requise"}`,
+        );
+      }
+      await saveState(state);
+      emitAccountState();
+    });
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+  });
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("before-quit", () => {
-  stopAutoUpdates?.();
-  stopAutoUpdates = null;
+  cancelMicrosoftLogin();
+  autoUpdates?.dispose();
+  autoUpdates = null;
 });

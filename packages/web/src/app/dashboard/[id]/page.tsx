@@ -24,7 +24,7 @@ export default async function EditLauncherPage({ params }: Props) {
     prisma.launcher.findUnique({ where: { id } }),
     prisma.user.findUnique({
       where: { id: session.userId },
-      select: { username: true, avatarUrl: true },
+      select: { username: true, avatarUrl: true, role: true },
     }),
   ]);
   if (!l || l.ownerId !== session.userId) notFound();
@@ -33,6 +33,7 @@ export default async function EditLauncherPage({ params }: Props) {
     <DashboardShell
       username={profile?.username ?? session.username}
       avatarUrl={assetUrl(profile?.avatarUrl)}
+      isAdmin={profile?.role === "admin"}
     >
       <section className="editor-heading">
         <div>

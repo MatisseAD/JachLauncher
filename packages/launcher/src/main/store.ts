@@ -8,6 +8,7 @@ import {
 } from "../shared-types/ipc";
 import { instancePathSegments } from "./instance-path";
 import { normalizeBaseUrl } from "./security";
+import { sanitizeStoredAccount } from "./account-state";
 
 // Persistance simple en JSON dans le dossier userData d'Electron.
 // (Évite une dépendance ESM comme electron-store.)
@@ -53,7 +54,7 @@ export async function loadState(): Promise<LauncherState> {
               typeof item.logoUrl === "string" ? item.logoUrl : undefined,
           }))
       : [];
-    const account = parsed.account?.type === "offline" ? parsed.account : null;
+    const account = sanitizeStoredAccount(parsed.account);
     return {
       ...DEFAULT_STATE,
       ...parsed,

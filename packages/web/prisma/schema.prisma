@@ -11,15 +11,32 @@ datasource db {
 }
 
 model User {
-  id          String            @id @default(cuid())
-  username    String            @unique
-  email       String?           @unique
-  avatarUrl   String?
-  password    String // hash bcrypt
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  launchers   Launcher[]
-  uploadUsage UserUploadUsage[]
+  id                 String            @id @default(cuid())
+  username           String            @unique
+  email              String?           @unique
+  avatarUrl          String?
+  password           String // hash bcrypt
+  role               String            @default("user")
+  disabledAt         DateTime?         @db.Timestamptz(3)
+  disabledReason     String?
+  disabledById       String?
+  disabledBy         User?             @relation("UserDisabler", fields: [disabledById], references: [id], onDelete: Restrict)
+  disabledUsers      User[]            @relation("UserDisabler")
+  lastLoginAt        DateTime?         @db.Timestamptz(3)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  launchers          Launcher[]
+  suspendedLaunchers Launcher[]        @relation("LauncherSuspender")
+  createdPlayerBans  PlayerBan[]       @relation("PlayerBanCreator")
+  revokedPlayerBans  PlayerBan[]       @relation("PlayerBanRevoker")
+  adminAuditLogs     AdminAuditLog[]   @relation("AdminAuditActor")
+  uploadUsage        UserUploadUsage[]
+
+  @@index([disabledById])
+  @@index([disabledAt])
+  @@index([role, disabledAt])
+  @@index([lastLoginAt])
+  @@index([createdAt, id])
 }
 
 model Launcher {
@@ -30,10 +47,14 @@ model Launcher {
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   // --- Méta ---
-  title       String
-  description String  @default("")
-  status      String  @default("draft") // draft | ready | published
-  favorite    Boolean @default(false)
+  title            String
+  description      String    @default("")
+  status           String    @default("draft") // draft | ready | published
+  favorite         Boolean   @default(false)
+  suspendedAt      DateTime? @db.Timestamptz(3)
+  suspensionReason String?
+  suspendedById    String?
+  suspendedBy      User?     @relation("LauncherSuspender", fields: [suspendedById], references: [id], onDelete: Restrict)
 
   // --- Branding / apparence ---
   logoUrl            String?
@@ -94,8 +115,12 @@ model Launcher {
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
   dailyMetrics LauncherDailyMetric[]
+  playerBans   PlayerBan[]
 
   @@index([ownerId])
+  @@index([suspendedById])
+  @@index([suspendedAt])
+  @@index([createdAt, id])
 }
 
 // Historique conservé pour compatibilité de migration. Les écritures basées sur
@@ -122,4 +147,48 @@ model UserUploadUsage {
   updatedAt DateTime @updatedAt
 
   @@id([userId, day])
+}
+
+// Interdiction d'accès d'un joueur, globale ou limitée à un launcher.
+// Les identifiants sont normalisés dans l'API avant toute écriture/recherche.
+model PlayerBan {
+  id           String    @id @default(cuid())
+  launcherId   String?   @map("launcher_id")
+  launcher     Launcher? @relation(fields: [launcherId], references: [id], onDelete: Cascade)
+  subjectType  String    @map("subject_type")
+  subjectValue String    @map("subject_value")
+  reason       String
+  expiresAt    DateTime? @map("expires_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdById  String    @map("created_by_id")
+  createdBy    User      @relation("PlayerBanCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  revokedById  String?   @map("revoked_by_id")
+  revokedBy    User?     @relation("PlayerBanRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([launcherId], map: "player_bans_launcher_id_idx")
+  @@index([createdById], map: "player_bans_created_by_id_idx")
+  @@index([revokedById], map: "player_bans_revoked_by_id_idx")
+  @@index([subjectType, subjectValue, revokedAt, expiresAt], map: "player_bans_access_idx")
+  @@index([createdAt, id], map: "player_bans_created_at_id_idx")
+  @@map("player_bans")
+}
+
+// Journal de sécurité append-only. Une migration ajoute un trigger qui refuse
+// UPDATE et DELETE, y compris lorsqu'ils sont tentés via Prisma.
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  actor      User?    @relation("AdminAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+  action     String
+  targetType String   @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([actorId], map: "admin_audit_logs_actor_id_idx")
+  @@index([createdAt, id], map: "admin_audit_logs_created_at_id_idx")
+  @@index([action, createdAt], map: "admin_audit_logs_action_created_at_idx")
+  @@map("admin_audit_logs")
 }

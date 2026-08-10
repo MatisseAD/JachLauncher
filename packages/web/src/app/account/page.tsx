@@ -25,7 +25,13 @@ export default async function AccountPage() {
     }),
     prisma.user.findUnique({
       where: { id: session.userId },
-      select: { createdAt: true, username: true, email: true, avatarUrl: true },
+      select: {
+        createdAt: true,
+        username: true,
+        email: true,
+        avatarUrl: true,
+        role: true,
+      },
     }),
   ]);
   const resolvedAvatarUrl = assetUrl(user?.avatarUrl);
@@ -34,6 +40,7 @@ export default async function AccountPage() {
     <DashboardShell
       username={user?.username ?? session.username}
       avatarUrl={resolvedAvatarUrl}
+      isAdmin={user?.role === "admin"}
     >
       <section className="dashboard-heading account-heading">
         <div>

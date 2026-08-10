@@ -15,7 +15,24 @@ export async function GET(req: Request, { params }: Ctx) {
   // portant le même slug ne doit jamais pouvoir les masquer ou les détourner.
   const launcher = demo
     ? null
-    : await prisma.launcher.findUnique({ where: { slug } }).catch(() => null);
+    : await prisma.launcher
+        .findUnique({
+          where: { slug },
+          include: { owner: { select: { disabledAt: true } } },
+        })
+        .catch(() => null);
+  if (launcher?.suspendedAt) {
+    return NextResponse.json(
+      { error: "Ce launcher est suspendu", code: "LAUNCHER_SUSPENDED" },
+      { status: 423, headers: corsHeaders() },
+    );
+  }
+  if (launcher?.owner.disabledAt) {
+    return NextResponse.json(
+      { error: "Ce launcher est indisponible", code: "OWNER_DISABLED" },
+      { status: 423, headers: corsHeaders() },
+    );
+  }
   if ((!launcher || launcher.status !== "published") && !demo) {
     return NextResponse.json(
       { error: "Aucun launcher publié avec ce code" },

@@ -103,6 +103,8 @@ export default function App() {
   const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState>({
     status: "idle",
   });
+  const [updateActionBusy, setUpdateActionBusy] = useState(false);
+  const [microsoftLoginBusy, setMicrosoftLoginBusy] = useState(false);
   const logsRef = useRef<string[]>([]);
 
   function notify(kind: SkinNotification["kind"], message: string) {
@@ -136,10 +138,16 @@ export default function App() {
       logsRef.current = [...logsRef.current.slice(-400), line];
     });
     const offU = window.jach.onUpdateState(setDesktopUpdate);
+    const offA = window.jach.onAccountChanged(setAccount);
+    void window.jach
+      .getUpdateState()
+      .then(setDesktopUpdate)
+      .catch(() => {});
     return () => {
       offP();
       offL();
       offU();
+      offA();
     };
   }, []);
 
@@ -427,12 +435,23 @@ export default function App() {
           }
         },
         onLoginMicrosoft: async () => {
-          const r = await window.jach.loginMicrosoft();
-          if (r.ok && r.account) {
-            setAccount(r.account);
-            notify("success", "Connexion réussie");
-          } else {
-            notify("error", r.error ?? "Échec de la connexion");
+          if (microsoftLoginBusy) return;
+          setMicrosoftLoginBusy(true);
+          try {
+            const r = await window.jach.loginMicrosoft();
+            if (r.ok && r.account) {
+              setAccount(r.account);
+              notify("success", "Connexion réussie");
+            } else {
+              notify("error", r.error ?? "Échec de la connexion");
+            }
+          } catch {
+            notify(
+              "error",
+              "Le service de connexion ne répond pas. Redémarre l'application puis réessaie.",
+            );
+          } finally {
+            setMicrosoftLoginBusy(false);
           }
         },
         onLoginOffline: async (name) => {
@@ -445,8 +464,15 @@ export default function App() {
           }
         },
         onLogout: async () => {
-          await window.jach.logout();
-          setAccount(null);
+          try {
+            await window.jach.logout();
+            setAccount(null);
+          } catch {
+            notify(
+              "error",
+              "La session chiffrée n'a pas pu être supprimée. Redémarre l'application puis réessaie.",
+            );
+          }
         },
         onOpenLink: (url) => window.open(url, "_blank", "noopener"),
         onMinimize: () => window.jach.minimize(),
@@ -529,30 +555,119 @@ export default function App() {
   return (
     <>
       {skin}
-      {desktopUpdate.status !== "idle" &&
-        desktopUpdate.status !== "checking" && (
-          <div className={`desktop-update ${desktopUpdate.status}`}>
-            <span className="desktop-update-dot" />
-            <div>
-              <strong>
-                {desktopUpdate.status === "ready"
-                  ? `Mise à jour ${desktopUpdate.version ?? ""} prête`
-                  : desktopUpdate.status === "downloading"
-                    ? `Mise à jour en cours · ${desktopUpdate.percent ?? 0}%`
-                    : desktopUpdate.status === "available"
-                      ? `Nouvelle version ${desktopUpdate.version ?? ""}`
-                      : "Mise à jour temporairement indisponible"}
-              </strong>
-              <small>
-                {desktopUpdate.status === "ready"
-                  ? "Elle s’installera automatiquement à la fermeture."
-                  : desktopUpdate.status === "error"
-                    ? desktopUpdate.message
-                    : "Téléchargement sécurisé en arrière-plan."}
-              </small>
-            </div>
+      {tab === "settings" && (
+        <button
+          type="button"
+          className="admin-center-link"
+          onClick={async () => {
+            try {
+              await window.jach.openAdminCenter();
+            } catch {
+              notify("error", "Impossible d'ouvrir le centre d'administration.");
+            }
+          }}
+        >
+          Centre d'administration ↗
+        </button>
+      )}
+      {microsoftLoginBusy && (
+        <div className="microsoft-auth-overlay" role="status" aria-live="polite">
+          <div className="microsoft-auth-card">
+            <strong>Connexion Microsoft en cours</strong>
+            <span>
+              Termine la connexion dans ton navigateur. Cette fenêtre peut rester
+              ouverte.
+            </span>
+            <button
+              type="button"
+              onClick={() => void window.jach.cancelMicrosoftLogin()}
+            >
+              Annuler
+            </button>
           </div>
-        )}
+        </div>
+      )}
+      {desktopUpdate.status !== "disabled" && (
+        <div className={`desktop-update ${desktopUpdate.status}`}>
+          <span className="desktop-update-dot" />
+          <div>
+            <strong>
+              {desktopUpdate.status === "ready"
+                ? `Mise à jour ${desktopUpdate.version ?? ""} prête`
+                : desktopUpdate.status === "downloading"
+                  ? `Mise à jour en cours · ${desktopUpdate.percent ?? 0}%`
+                  : desktopUpdate.status === "available"
+                    ? `Nouvelle version ${desktopUpdate.version ?? ""}`
+                    : desktopUpdate.status === "checking"
+                      ? "Recherche d'une mise à jour…"
+                      : desktopUpdate.status === "error"
+                        ? "Mise à jour temporairement indisponible"
+                        : `YourLauncher ${desktopUpdate.version ?? ""} est à jour`}
+            </strong>
+            <small>
+              {desktopUpdate.status === "ready"
+                ? "Elle s’installera automatiquement à la fermeture."
+                : desktopUpdate.status === "error"
+                  ? desktopUpdate.message
+                  : desktopUpdate.status === "idle"
+                    ? "Vérification automatique toutes les quatre heures."
+                    : "Téléchargement contrôlé en arrière-plan."}
+            </small>
+          </div>
+          {(desktopUpdate.status === "idle" ||
+            desktopUpdate.status === "error") && (
+            <button
+              type="button"
+              disabled={updateActionBusy}
+              onClick={async () => {
+                setUpdateActionBusy(true);
+                try {
+                  const result = await window.jach.checkForDesktopUpdate();
+                  setDesktopUpdate(result.state);
+                  if (!result.ok && result.error) {
+                    notify("error", result.error);
+                  }
+                } catch {
+                  notify(
+                    "error",
+                    "Le service de mise à jour ne répond pas. Redémarre l'application.",
+                  );
+                } finally {
+                  setUpdateActionBusy(false);
+                }
+              }}
+            >
+              {updateActionBusy ? "Vérification…" : "Vérifier"}
+            </button>
+          )}
+          {desktopUpdate.status === "ready" && (
+            <button
+              type="button"
+              disabled={updateActionBusy}
+              onClick={async () => {
+                setUpdateActionBusy(true);
+                try {
+                  const result = await window.jach.installDesktopUpdate();
+                  if (result.ok) return;
+                  notify(
+                    "error",
+                    result.error ?? "Installation de la mise à jour impossible",
+                  );
+                } catch {
+                  notify(
+                    "error",
+                    "Le service de mise à jour ne répond pas. Redémarre l'application.",
+                  );
+                } finally {
+                  setUpdateActionBusy(false);
+                }
+              }}
+            >
+              Installer maintenant
+            </button>
+          )}
+        </div>
+      )}
       {adding && (
         <div
           style={

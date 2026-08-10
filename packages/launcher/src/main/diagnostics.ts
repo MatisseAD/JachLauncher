@@ -9,6 +9,14 @@ import { getSystemInfo } from "./system";
 export function classifyError(message: string): Diagnostic {
   const m = message.toLowerCase();
 
+  if (/auth_session_mismatch/.test(m)) {
+    return {
+      title: "Reconnexion requise",
+      message:
+        "Le compte affiché et l'autorisation de jeu ne correspondent plus. Déconnecte-toi puis reconnecte-toi avant de relancer.",
+    };
+  }
+
   if (/sha-256|sha256|incorrect|corromp/.test(m)) {
     return {
       title: "Fichier corrompu",

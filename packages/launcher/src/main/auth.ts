@@ -1,5 +1,22 @@
 import crypto from "node:crypto";
+import path from "node:path";
+import type {
+  AuthenticationResult,
+  PublicClientApplication,
+} from "@azure/msal-node";
 import type { Account, AuthResult } from "../shared-types/ipc";
+import {
+  createAuthorizationCodePayload,
+  createMicrosoftLoopbackCallback,
+  createMicrosoftOAuthTransaction,
+} from "./microsoft-oauth";
+import { exchangeMicrosoftTokenForMinecraft } from "./microsoft-xbox";
+import {
+  createEncryptedMsalCachePlugin,
+  EncryptedTokenCacheStore,
+  SecureTokenCacheError,
+  type AsyncSecretProtector,
+} from "./secure-token-cache";
 
 declare const __JACH_AZURE_CLIENT_ID__: string | undefined;
 
@@ -9,6 +26,10 @@ const BUNDLED_AZURE_CLIENT_ID =
   typeof __JACH_AZURE_CLIENT_ID__ === "string"
     ? __JACH_AZURE_CLIENT_ID__
     : undefined;
+const MICROSOFT_AUTHORITY =
+  "https://login.microsoftonline.com/consumers";
+export const MICROSOFT_SCOPES = ["XboxLive.signin", "offline_access"];
+const MSAL_CACHE_FILENAME = "microsoft-msal-cache.bin";
 
 /** Données d'autorisation adaptées aux options de lancement XMCL. */
 export interface MinecraftAuthorization {
@@ -17,11 +38,33 @@ export interface MinecraftAuthorization {
   uuid: string;
   name: string;
   user_properties: string;
-  meta?: { type: string; demo?: boolean };
+  meta?: { type: string; demo?: boolean; exp?: number };
 }
 
-// Autorisation courante en mémoire (jamais persistée : contient des tokens).
+interface MicrosoftClient {
+  application: PublicClientApplication;
+  cacheStore: EncryptedTokenCacheStore;
+}
+
+interface AuthErrorShape {
+  code?: unknown;
+  errorCode?: unknown;
+  subError?: unknown;
+  ts?: unknown;
+  message?: unknown;
+  status?: unknown;
+  response?: { status?: unknown };
+}
+
+// Les jetons de jeu restent uniquement en mémoire. Seul le cache MSAL est
+// persisté et il est chiffré par safeStorage.
 let currentAuth: MinecraftAuthorization | null = null;
+let microsoftLoginPromise: Promise<AuthResult> | null = null;
+let microsoftLoginAbortController: AbortController | null = null;
+let microsoftRestorePromise: Promise<AuthResult> | null = null;
+let microsoftRestoreAbortController: AbortController | null = null;
+let microsoftClientPromise: Promise<MicrosoftClient> | null = null;
+let microsoftCacheStorePromise: Promise<EncryptedTokenCacheStore> | null = null;
 
 /**
  * L'environnement reste prioritaire pour le développement. En production,
@@ -35,7 +78,7 @@ export function resolveAzureClientId(
   if (!clientId) return null;
   if (!AZURE_CLIENT_ID_PATTERN.test(clientId)) {
     throw new Error(
-      "JACH_AZURE_CLIENT_ID invalide : un identifiant d’application Azure au format GUID est attendu.",
+      "JACH_AZURE_CLIENT_ID invalide : un identifiant d'application Azure au format GUID est attendu.",
     );
   }
   return clientId;
@@ -50,8 +93,8 @@ export function offlineUuid(name: string): string {
     .createHash("md5")
     .update(`OfflinePlayer:${name}`, "utf8")
     .digest();
-  md5[6] = (md5[6] & 0x0f) | 0x30; // version 3
-  md5[8] = (md5[8] & 0x3f) | 0x80; // variante RFC 4122
+  md5[6] = (md5[6] & 0x0f) | 0x30;
+  md5[8] = (md5[8] & 0x3f) | 0x80;
   const hex = md5.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
@@ -70,91 +113,403 @@ export function setOfflineAccount(username: string): AuthResult {
     user_properties: "{}",
     meta: { type: "offline", demo: false },
   };
-  const account: Account = {
-    type: "offline",
-    username: name,
-    uuid,
-    avatarUrl: `https://mc-heads.net/avatar/${uuid}/64`,
+  return {
+    ok: true,
+    account: {
+      type: "offline",
+      username: name,
+      uuid,
+      avatarUrl: `https://mc-heads.net/avatar/${uuid}/64`,
+    },
   };
-  return { ok: true, account };
 }
 
-/**
- * Authentification Microsoft via msmc (chargé dynamiquement car ESM).
- * Nécessite Electron (ouvre une fenêtre de connexion) et, en production,
- * un client ID Azure valide autorisé pour l'API Minecraft.
- */
-export async function loginMicrosoft(): Promise<AuthResult> {
-  try {
-    // Import dynamique : msmc est un module ESM, on évite un require() CJS.
-    const { Auth } = await import("msmc");
-
-    const clientId = resolveAzureClientId();
-    if (!clientId) {
-      return {
-        ok: false,
-        error:
-          "Connexion Microsoft non configurée dans cette version du launcher (JACH_AZURE_CLIENT_ID absent).",
-      };
-    }
-    const authManager = new Auth({
-      client_id: clientId,
-      redirect: "https://login.live.com/oauth20_desktop.srf",
-      prompt: "select_account",
-    });
-
-    const xbox = await authManager.launch("electron");
-    const mc = await xbox.getMinecraft();
-    const rawAuthorization = mc.mclc();
-    if (
-      !rawAuthorization.access_token ||
-      !rawAuthorization.uuid ||
-      !rawAuthorization.name
-    ) {
-      throw new Error("Réponse Microsoft incomplète.");
-    }
-    const mclc: MinecraftAuthorization = {
-      access_token: rawAuthorization.access_token,
-      // XMCL exige cette valeur, alors que msmc la déclare optionnelle.
-      // Une valeur locale suffit lorsque Microsoft n'en fournit pas.
-      client_token: rawAuthorization.client_token ?? crypto.randomUUID(),
-      uuid: rawAuthorization.uuid,
-      name: rawAuthorization.name,
-      user_properties:
-        typeof rawAuthorization.user_properties === "string"
-          ? rawAuthorization.user_properties
-          : JSON.stringify(rawAuthorization.user_properties ?? {}),
-      meta: rawAuthorization.meta
-        ? {
-            type: rawAuthorization.meta.type,
-            demo: rawAuthorization.meta.demo,
-          }
-        : undefined,
-    };
-    currentAuth = mclc;
-
-    const account: Account = {
-      type: "microsoft",
-      username: mclc.name,
-      uuid: mclc.uuid,
-      avatarUrl: `https://mc-heads.net/avatar/${mclc.uuid}/64`,
-    };
-    return { ok: true, account };
-  } catch (e) {
-    return {
-      ok: false,
-      error:
-        "Échec de la connexion Microsoft. Configure un client ID Azure (JACH_AZURE_CLIENT_ID) ou utilise le mode hors-ligne. Détail : " +
-        String(e),
-    };
+/** Transforme les codes MSAL/Xbox/Minecraft en consignes sans donnée sensible. */
+export function classifyMicrosoftAuthError(detail: string): string {
+  if (
+    /MICROSOFT_LOGIN_CANCELLED|error\.gui\.closed|callback.*cancel|access_denied|user_cancelled|annul/i.test(
+      detail,
+    )
+  ) {
+    return "Connexion Microsoft annulée.";
   }
+  if (/callback.*timeout|MICROSOFT_SERVICE_TIMEOUT|temporisation|expir/i.test(detail)) {
+    return "La connexion Microsoft a expiré. Vérifie Internet puis relance la connexion.";
+  }
+  if (/state_mismatch|état de sécurité|state mismatch/i.test(detail)) {
+    return "La réponse Microsoft n'a pas passé le contrôle de sécurité. Ferme les anciens onglets de connexion puis réessaie.";
+  }
+  if (/encryption_unavailable|chiffrement sécurisé.*indisponible/i.test(detail)) {
+    return "La connexion Microsoft nécessite le coffre-fort chiffré de Windows, indisponible sur ce système. Redémarre ta session Windows puis réessaie.";
+  }
+  if (/cache_invalid|cache Microsoft.*(?:invalide|déverrouillé)/i.test(detail)) {
+    return "La session Microsoft enregistrée est illisible. Déconnecte le compte puis reconnecte-le.";
+  }
+  if (/AUTH_CONFIG_MISSING|JACH_AZURE_CLIENT_ID|client ID.*GUID|format GUID/i.test(detail)) {
+    return "Configuration Microsoft invalide : le client ID Azure public de cette version est absent ou mal formé.";
+  }
+  if (/AADSTS50011|reply url|redirect[_ ]uri|redirect URI/i.test(detail)) {
+    return "Configuration Microsoft invalide : ajoute http://localhost aux URI de redirection « Applications mobiles et de bureau » dans Azure.";
+  }
+  if (/AADSTS700016|AADSTS50194|invalid.client|unauthorized_client/i.test(detail)) {
+    return "Configuration Microsoft invalide : le client ID doit appartenir à une application Azure publique acceptant les comptes Microsoft personnels.";
+  }
+  if (/error\.auth\.xsts\.userNotFound|2148916233/i.test(detail)) {
+    return "Ce compte Microsoft n'a pas encore de profil Xbox. Connecte-toi une fois sur xbox.com, crée ton gamertag puis réessaie.";
+  }
+  if (/error\.auth\.xsts\.bannedCountry|2148916235/i.test(detail)) {
+    return "Xbox Live n'est pas disponible pour le pays associé à ce compte Microsoft.";
+  }
+  if (/error\.auth\.xsts\.child|214891623[678]/i.test(detail)) {
+    return "Ce compte enfant doit être ajouté à une famille Microsoft et autorisé par un adulte avant de pouvoir utiliser Xbox Live.";
+  }
+  if (/MINECRAFT_JAVA_PROFILE_MISSING/i.test(detail)) {
+    return "La licence Java existe, mais aucun profil Minecraft n'est initialisé. Choisis d'abord un pseudo sur minecraft.net puis réessaie.";
+  }
+  if (
+    /MINECRAFT_JAVA_LICENSE_MISSING|error\.auth\.minecraft\.entitlements|minecraft profile.*NOT_FOUND|license|licence/i.test(
+      detail,
+    )
+  ) {
+    return "Aucune licence Minecraft: Java Edition utilisable n'a été trouvée sur ce compte.";
+  }
+  if (/error\.auth\.xboxLive|error\.auth\.xsts/i.test(detail)) {
+    return "Xbox Live a refusé la connexion. Vérifie le profil Xbox et les autorisations familiales du compte.";
+  }
+  if (/interaction_required|consent_required|login_required/i.test(detail)) {
+    return "La session Microsoft doit être renouvelée. Relance la connexion et valide la demande dans le navigateur.";
+  }
+  if (/MICROSOFT_NETWORK_ERROR|network|fetch failed|ENOTFOUND|ECONN/i.test(detail)) {
+    return "Les services Microsoft sont injoignables. Vérifie Internet, le pare-feu et l'heure de Windows, puis réessaie.";
+  }
+  if (/error\.auth\.microsoft|AADSTS|oauth|invalid_grant/i.test(detail)) {
+    return "Microsoft a refusé la connexion. Relance-la dans le navigateur et, si le problème persiste, contacte l'administrateur du launcher.";
+  }
+  return "La connexion Microsoft a échoué. Vérifie Internet, le profil Xbox et la licence Minecraft: Java Edition, puis réessaie.";
+}
+
+function describeMicrosoftAuthError(error: unknown): string {
+  const shape =
+    typeof error === "object" && error !== null
+      ? (error as AuthErrorShape)
+      : undefined;
+  const safeDetails = [
+    typeof error === "string" ? error : "",
+    typeof shape?.code === "string" ? shape.code : "",
+    typeof shape?.errorCode === "string" ? shape.errorCode : "",
+    typeof shape?.subError === "string" ? shape.subError : "",
+    typeof shape?.ts === "string" ? shape.ts : "",
+    typeof shape?.message === "string" ? shape.message.slice(0, 1_000) : "",
+    typeof shape?.status === "number" ? `HTTP ${shape.status}` : "",
+    typeof shape?.response?.status === "number"
+      ? `HTTP ${shape.response.status}`
+      : "",
+  ];
+  // Aucun corps HTTP, URL de callback, code ou jeton n'est propagé au renderer.
+  return classifyMicrosoftAuthError(safeDetails.filter(Boolean).join(" "));
+}
+
+export function assertSafeMicrosoftAuthorizationUrl(value: string): string {
+  const url = new URL(value);
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "login.microsoftonline.com" ||
+    !/^\/consumers\/oauth2\/v2\.0\/authorize\/?$/i.test(url.pathname)
+  ) {
+    throw new Error("MICROSOFT_AUTHORIZATION_URL_REJECTED");
+  }
+  return url.toString();
+}
+
+async function getMicrosoftCacheStore(): Promise<EncryptedTokenCacheStore> {
+  if (microsoftCacheStorePromise) return microsoftCacheStorePromise;
+  microsoftCacheStorePromise = (async () => {
+    const { app, safeStorage } = await import("electron");
+    if (!app.isReady()) {
+      throw new Error("Le stockage Microsoft est initialisé avant Electron.");
+    }
+    const protector: AsyncSecretProtector = {
+      isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+      encrypt: (plainText) => safeStorage.encryptStringAsync(plainText),
+      async decrypt(encrypted) {
+        const decrypted = await safeStorage.decryptStringAsync(encrypted);
+        return {
+          result: decrypted.result,
+          shouldReEncrypt: decrypted.shouldReEncrypt,
+        };
+      },
+    };
+    return new EncryptedTokenCacheStore(
+      path.join(app.getPath("userData"), MSAL_CACHE_FILENAME),
+      protector,
+    );
+  })().catch((error: unknown) => {
+    microsoftCacheStorePromise = null;
+    throw error;
+  });
+  return microsoftCacheStorePromise;
+}
+
+async function getMicrosoftClient(): Promise<MicrosoftClient> {
+  if (microsoftClientPromise) return microsoftClientPromise;
+  microsoftClientPromise = (async () => {
+    const clientId = resolveAzureClientId();
+    if (!clientId) throw new Error("AUTH_CONFIG_MISSING");
+    const [{ PublicClientApplication, LogLevel }, cacheStore] =
+      await Promise.all([
+        import("@azure/msal-node"),
+        getMicrosoftCacheStore(),
+      ]);
+    const application = new PublicClientApplication({
+      auth: {
+        clientId,
+        authority: MICROSOFT_AUTHORITY,
+      },
+      cache: {
+        cachePlugin: createEncryptedMsalCachePlugin(cacheStore),
+      },
+      system: {
+        loggerOptions: {
+          logLevel: LogLevel.Error,
+          piiLoggingEnabled: false,
+          // On ne journalise pas MSAL : les diagnostics utilisateurs sont
+          // classés plus bas sans URL, code, compte ni jeton.
+          loggerCallback: () => undefined,
+        },
+      },
+    });
+    return { application, cacheStore };
+  })().catch((error: unknown) => {
+    microsoftClientPromise = null;
+    throw error;
+  });
+  return microsoftClientPromise;
+}
+
+async function acquireInteractiveToken(
+  application: PublicClientApplication,
+  signal: AbortSignal,
+  onProgress?: (stage: string) => void,
+): Promise<AuthenticationResult> {
+  const transaction = createMicrosoftOAuthTransaction();
+  const callback = await createMicrosoftLoopbackCallback({
+    expectedState: transaction.state,
+    signal,
+  });
+  try {
+    const scopes = [...MICROSOFT_SCOPES];
+    const authorizationUrl = assertSafeMicrosoftAuthorizationUrl(
+      await application.getAuthCodeUrl({
+        scopes,
+        redirectUri: callback.redirectUri,
+        responseMode: "query",
+        state: transaction.state,
+        nonce: transaction.nonce,
+        prompt: "select_account",
+        codeChallenge: transaction.challenge,
+        codeChallengeMethod: "S256",
+      }),
+    );
+    if (signal.aborted) throw new Error("MICROSOFT_LOGIN_CANCELLED");
+
+    onProgress?.("Navigateur système ouvert — termine la connexion Microsoft…");
+    const { shell } = await import("electron");
+    await shell.openExternal(authorizationUrl);
+    const code = await callback.waitForCode;
+    if (signal.aborted) throw new Error("MICROSOFT_LOGIN_CANCELLED");
+
+    onProgress?.("Validation sécurisée de la réponse Microsoft…");
+    return application.acquireTokenByCode(
+      {
+        code,
+        scopes,
+        redirectUri: callback.redirectUri,
+        state: transaction.state,
+        codeVerifier: transaction.verifier,
+      },
+      createAuthorizationCodePayload(code, transaction),
+    );
+  } finally {
+    await callback.close();
+  }
+}
+
+function toAccount(authorization: MinecraftAuthorization): Account {
+  return {
+    type: "microsoft",
+    username: authorization.name,
+    uuid: authorization.uuid,
+    avatarUrl: `https://mc-heads.net/avatar/${authorization.uuid}/64`,
+  };
+}
+
+async function useMicrosoftToken(
+  result: AuthenticationResult,
+  signal: AbortSignal | undefined,
+  onProgress?: (stage: string) => void,
+  shouldCommit: () => boolean = () => true,
+): Promise<AuthResult> {
+  if (!result.accessToken) throw new Error("MICROSOFT_ACCESS_TOKEN_MISSING");
+  const authorization = await exchangeMicrosoftTokenForMinecraft(
+    result.accessToken,
+    { signal, onProgress },
+  );
+  if (!shouldCommit()) {
+    return { ok: false, error: "Connexion Microsoft annulée." };
+  }
+  currentAuth = authorization;
+  return { ok: true, account: toAccount(authorization) };
+}
+
+async function keepOnlySelectedMsalAccount(
+  application: PublicClientApplication,
+  result: AuthenticationResult,
+): Promise<void> {
+  if (!result.account) return;
+  const accounts = await application.getAllAccounts();
+  for (const account of accounts) {
+    if (account.homeAccountId !== result.account.homeAccountId) {
+      await application.getTokenCache().removeAccount(account);
+    }
+  }
+}
+
+async function performMicrosoftLogin(
+  signal: AbortSignal,
+  onProgress?: (stage: string) => void,
+): Promise<AuthResult> {
+  try {
+    const pendingRestore = microsoftRestorePromise;
+    microsoftRestoreAbortController?.abort();
+    if (pendingRestore) await pendingRestore;
+    const { application, cacheStore } = await getMicrosoftClient();
+    // Préflight explicite : jamais de connexion si le cache ne peut pas être
+    // chiffré/déchiffré par le coffre-fort natif.
+    try {
+      await cacheStore.load();
+    } catch (error) {
+      if (!isRecoverableMicrosoftCacheError(error)) throw error;
+      // Un cache indéchiffrable ne contient plus de session utilisable. On
+      // supprime uniquement ce fichier chiffré avant le nouveau flux OAuth.
+      await cacheStore.clear();
+    }
+    const result = await acquireInteractiveToken(
+      application,
+      signal,
+      onProgress,
+    );
+    await keepOnlySelectedMsalAccount(application, result);
+    return await useMicrosoftToken(result, signal, onProgress);
+  } catch (error) {
+    return { ok: false, error: describeMicrosoftAuthError(error) };
+  }
+}
+
+export function isRecoverableMicrosoftCacheError(error: unknown): boolean {
+  return (
+    error instanceof SecureTokenCacheError &&
+    (error.code === "cache_invalid" || error.code === "cache_io")
+  );
+}
+
+/** Une seule connexion interactive peut être active à la fois. */
+export function loginMicrosoft(
+  onProgress?: (stage: string) => void,
+): Promise<AuthResult> {
+  if (microsoftLoginPromise) return microsoftLoginPromise;
+  const controller = new AbortController();
+  microsoftLoginAbortController = controller;
+  microsoftLoginPromise = performMicrosoftLogin(
+    controller.signal,
+    onProgress,
+  ).finally(() => {
+    microsoftLoginPromise = null;
+    if (microsoftLoginAbortController === controller) {
+      microsoftLoginAbortController = null;
+    }
+  });
+  return microsoftLoginPromise;
+}
+
+export function cancelMicrosoftLogin(): boolean {
+  if (!microsoftLoginAbortController) return false;
+  microsoftLoginAbortController.abort();
+  return true;
+}
+
+/** Restaure silencieusement le dernier compte via le refresh token MSAL chiffré. */
+async function performMicrosoftRestore(
+  signal: AbortSignal,
+  onProgress: ((stage: string) => void) | undefined,
+  shouldCommit: () => boolean,
+): Promise<AuthResult> {
+  try {
+    const { application } = await getMicrosoftClient();
+    const accounts = await application.getAllAccounts();
+    if (accounts.length === 0) {
+      return { ok: false, error: "Aucune session Microsoft enregistrée." };
+    }
+    onProgress?.("Restauration sécurisée de la session Microsoft…");
+    const result = await application.acquireTokenSilent({
+      account: accounts[0],
+      scopes: [...MICROSOFT_SCOPES],
+    });
+    return await useMicrosoftToken(result, signal, onProgress, shouldCommit);
+  } catch (error) {
+    return { ok: false, error: describeMicrosoftAuthError(error) };
+  }
+}
+
+export function restoreMicrosoftAccount(
+  onProgress?: (stage: string) => void,
+  shouldCommit: () => boolean = () => true,
+): Promise<AuthResult> {
+  if (microsoftRestorePromise) return microsoftRestorePromise;
+  const controller = new AbortController();
+  microsoftRestoreAbortController = controller;
+  microsoftRestorePromise = performMicrosoftRestore(
+    controller.signal,
+    onProgress,
+    shouldCommit,
+  ).finally(() => {
+    microsoftRestorePromise = null;
+    if (microsoftRestoreAbortController === controller) {
+      microsoftRestoreAbortController = null;
+    }
+  });
+  return microsoftRestorePromise;
+}
+
+export function isMinecraftAuthorizationFresh(
+  authorization: MinecraftAuthorization | null,
+  now = Date.now(),
+): boolean {
+  return Boolean(
+    authorization?.meta?.type === "msa" &&
+      authorization.meta.exp &&
+      authorization.meta.exp > now + 5 * 60 * 1_000,
+  );
+}
+
+/** Rafraîchit silencieusement le jeton de jeu lorsqu'il approche de l'expiration. */
+export function ensureMicrosoftAuthorizationFresh(
+  onProgress?: (stage: string) => void,
+  shouldCommit: () => boolean = () => true,
+): Promise<AuthResult> {
+  if (isMinecraftAuthorizationFresh(currentAuth)) {
+    return Promise.resolve({
+      ok: true,
+      account: toAccount(currentAuth as MinecraftAuthorization),
+    });
+  }
+  return restoreMicrosoftAccount(onProgress, shouldCommit);
 }
 
 /** Recharge une autorisation hors-ligne depuis un compte persistant. */
 export function rehydrateOffline(account: Account): void {
   if (account.type === "offline") {
-    const r = setOfflineAccount(account.username);
-    if (!r.ok) currentAuth = null;
+    const result = setOfflineAccount(account.username);
+    if (!result.ok) currentAuth = null;
   }
 }
 
@@ -164,4 +519,32 @@ export function getCurrentAuth(): MinecraftAuthorization | null {
 
 export function clearAuth(): void {
   currentAuth = null;
+}
+
+/** Supprime les comptes MSAL en mémoire puis le fichier chiffré sur disque. */
+export async function clearMicrosoftSession(): Promise<void> {
+  const pendingLogin = microsoftLoginPromise;
+  const pendingRestore = microsoftRestorePromise;
+  cancelMicrosoftLogin();
+  microsoftRestoreAbortController?.abort();
+  await Promise.allSettled(
+    [pendingLogin, pendingRestore].filter(
+      (pending): pending is Promise<AuthResult> => pending !== null,
+    ),
+  );
+  const cacheStore = await getMicrosoftCacheStore();
+  if (microsoftClientPromise) {
+    try {
+      const { application } = await microsoftClientPromise;
+      const accounts = await application.getAllAccounts();
+      for (const account of accounts) {
+        await application.getTokenCache().removeAccount(account);
+      }
+    } catch {
+      // Le fichier est tout de même supprimé ci-dessous si MSAL ne démarre pas.
+    }
+  }
+  await cacheStore.clear();
+  currentAuth = null;
+  microsoftClientPromise = null;
 }

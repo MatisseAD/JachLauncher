@@ -67,7 +67,7 @@ export default async function DashboardPage() {
     }),
     prisma.user.findUnique({
       where: { id: session.userId },
-      select: { username: true, avatarUrl: true },
+      select: { username: true, avatarUrl: true, role: true },
     }),
   ]);
 
@@ -113,6 +113,7 @@ export default async function DashboardPage() {
     <DashboardShell
       username={profile?.username ?? session.username}
       avatarUrl={assetUrl(profile?.avatarUrl)}
+      isAdmin={profile?.role === "admin"}
     >
       <section className="dashboard-heading">
         <div>

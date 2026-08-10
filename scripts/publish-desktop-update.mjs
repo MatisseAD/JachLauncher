@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { promisify } from "node:util";
 import { put } from "@vercel/blob";
 
 const root = path.resolve(import.meta.dirname, "..");
 const releaseDir = path.resolve(root, "packages/launcher/release");
 const envFileArg = process.argv.indexOf("--env-file");
+const validateOnly = process.argv.includes("--validate-only");
+const SEMVER_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const UPDATE_ROOT =
+  "https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows";
+const execFileAsync = promisify(execFile);
 
 if (envFileArg >= 0 && process.argv[envFileArg + 1]) {
   const envPath = path.resolve(root, process.argv[envFileArg + 1]);
@@ -26,73 +35,331 @@ if (envFileArg >= 0 && process.argv[envFileArg + 1]) {
   }
 }
 
-if (!process.env.BLOB_READ_WRITE_TOKEN) {
-  throw new Error(
-    "BLOB_READ_WRITE_TOKEN est requis pour publier une mise à jour.",
-  );
+function yamlScalar(text, key) {
+  const match = text.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, "m"));
+  if (!match) return null;
+  const value = match[1].replace(/\s+#.*$/, "").trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function sha512Base64(buffer) {
+  return createHash("sha512").update(buffer).digest("base64");
+}
+
+function compareSemver(left, right) {
+  const a = SEMVER_PATTERN.exec(left);
+  const b = SEMVER_PATTERN.exec(right);
+  if (!a || !b) throw new Error("Comparaison de versions SemVer impossible.");
+  for (let index = 1; index <= 3; index += 1) {
+    const difference = Number(a[index]) - Number(b[index]);
+    if (difference) return Math.sign(difference);
+  }
+  const aPre = a[4]?.split(".");
+  const bPre = b[4]?.split(".");
+  if (!aPre && !bPre) return 0;
+  if (!aPre) return 1;
+  if (!bPre) return -1;
+  for (let index = 0; index < Math.max(aPre.length, bPre.length); index += 1) {
+    if (aPre[index] === undefined) return -1;
+    if (bPre[index] === undefined) return 1;
+    if (aPre[index] === bPre[index]) continue;
+    const aNumeric = /^\d+$/.test(aPre[index]);
+    const bNumeric = /^\d+$/.test(bPre[index]);
+    if (aNumeric && bNumeric) {
+      return Math.sign(Number(aPre[index]) - Number(bPre[index]));
+    }
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    return aPre[index].localeCompare(bPre[index]);
+  }
+  return 0;
+}
+
+async function verifyAuthenticodeSignature(installerPath) {
+  if (process.platform !== "win32") {
+    throw new Error(
+      "La publication doit être exécutée sous Windows afin de vérifier la signature Authenticode de l’installateur.",
+    );
+  }
+  const command = [
+    "$signature = Get-AuthenticodeSignature -LiteralPath $env:JACH_INSTALLER_PATH",
+    'if ($signature.Status -ne "Valid") {',
+    '  throw "Signature Authenticode invalide : $($signature.Status)"',
+    "}",
+  ].join("\n");
+  try {
+    await execFileAsync(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+      {
+        env: { ...process.env, JACH_INSTALLER_PATH: installerPath },
+        windowsHide: true,
+      },
+    );
+  } catch {
+    throw new Error(
+      "Publication refusée : l’installateur Windows ne possède pas une signature Authenticode valide.",
+    );
+  }
 }
 
 const files = await readdir(releaseDir);
 const launcherPackage = JSON.parse(
   await readFile(path.join(root, "packages/launcher/package.json"), "utf8"),
 );
-const installerName = `YourLauncher-Setup-${launcherPackage.version}.exe`;
-if (!files.includes(installerName)) {
-  throw new Error("Installateur YourLauncher introuvable dans release/.");
+if (!SEMVER_PATTERN.test(launcherPackage.version)) {
+  throw new Error(`Version Electron non SemVer : ${launcherPackage.version}`);
 }
 
+const installerName = `YourLauncher-Setup-${launcherPackage.version}.exe`;
 const blockmapName = `${installerName}.blockmap`;
-if (!files.includes(blockmapName) || !files.includes("latest.yml")) {
+for (const required of [installerName, blockmapName, "latest.yml"]) {
+  if (!files.includes(required)) {
+    throw new Error(
+      `${required} manque dans release/. Exécute d'abord le packaging Windows.`,
+    );
+  }
+}
+
+const installerBytes = await readFile(path.join(releaseDir, installerName));
+const blockmapBytes = await readFile(path.join(releaseDir, blockmapName));
+const metadataBytes = await readFile(path.join(releaseDir, "latest.yml"));
+const metadataText = metadataBytes.toString("utf8");
+if (!installerBytes.length || !blockmapBytes.length || !metadataBytes.length) {
+  throw new Error("Un artefact de mise à jour est vide.");
+}
+
+const metadataVersion = yamlScalar(metadataText, "version");
+const metadataPath = yamlScalar(metadataText, "path");
+const metadataSha512 = yamlScalar(metadataText, "sha512");
+const listedUrls = [...metadataText.matchAll(/^\s*-\s+url:\s*(.+?)\s*$/gm)].map(
+  (match) => match[1].replace(/^['"]|['"]$/g, ""),
+);
+const listedSizes = [...metadataText.matchAll(/^\s+size:\s*(\d+)\s*$/gm)].map(
+  (match) => Number(match[1]),
+);
+const expectedSha512 = sha512Base64(installerBytes);
+
+if (metadataVersion !== launcherPackage.version) {
   throw new Error(
-    "latest.yml ou le blockmap manque. Exécute d’abord le packaging Windows.",
+    `latest.yml annonce ${metadataVersion ?? "aucune version"}, attendu ${launcherPackage.version}.`,
+  );
+}
+if (
+  metadataPath !== installerName ||
+  listedUrls.length !== 1 ||
+  listedUrls[0] !== installerName
+) {
+  throw new Error(
+    `latest.yml doit référencer uniquement l'installateur relatif ${installerName}.`,
+  );
+}
+if (listedUrls.some((url) => url.includes("..") || /^https?:/i.test(url))) {
+  throw new Error("latest.yml contient une URL d'artefact non relative.");
+}
+if (
+  metadataSha512 !== expectedSha512 ||
+  !metadataText.includes(expectedSha512)
+) {
+  throw new Error(
+    "Le SHA-512 de latest.yml ne correspond pas à l'installateur.",
+  );
+}
+if (!listedSizes.includes(installerBytes.length)) {
+  throw new Error(
+    "La taille de l'installateur dans latest.yml est incorrecte.",
+  );
+}
+
+if (validateOnly) {
+  console.log(
+    `Artefacts ${launcherPackage.version} valides : ${installerName}, ${blockmapName}, latest.yml.`,
+  );
+  process.exit(0);
+}
+
+await verifyAuthenticodeSignature(path.join(releaseDir, installerName));
+
+if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  throw new Error(
+    "BLOB_READ_WRITE_TOKEN est requis pour publier une mise à jour.",
+  );
+}
+
+const publishedMetadataResponse = await fetch(
+  `${UPDATE_ROOT}/latest.yml?preflight=${Date.now()}`,
+  { cache: "no-store" },
+);
+if (publishedMetadataResponse.ok) {
+  const publishedVersion = yamlScalar(
+    await publishedMetadataResponse.text(),
+    "version",
+  );
+  if (!publishedVersion || !SEMVER_PATTERN.test(publishedVersion)) {
+    throw new Error("Le latest.yml public contient une version invalide.");
+  }
+  if (compareSemver(launcherPackage.version, publishedVersion) < 0) {
+    throw new Error(
+      `Publication refusée : ${launcherPackage.version} est antérieure au canal public ${publishedVersion}.`,
+    );
+  }
+} else if (publishedMetadataResponse.status !== 404) {
+  throw new Error(
+    `Impossible de lire le latest.yml public (HTTP ${publishedMetadataResponse.status}).`,
   );
 }
 
 const publish = async (
   pathname,
-  sourceName,
+  bytes,
   contentType,
   cacheControlMaxAge,
   multipart = false,
+  allowOverwrite = false,
 ) =>
-  put(pathname, await readFile(path.join(releaseDir, sourceName)), {
+  put(pathname, bytes, {
     access: "public",
     addRandomSuffix: false,
-    allowOverwrite: true,
+    allowOverwrite,
     contentType,
     cacheControlMaxAge,
     multipart,
   });
 
-// Les artefacts immuables sont envoyés avant le manifeste. Ainsi, un client ne
-// voit jamais un latest.yml dont le binaire n'est pas encore disponible.
-const installer = await publish(
-  `releases/windows/${installerName}`,
-  installerName,
-  "application/vnd.microsoft.portable-executable",
-  31_536_000,
-  true,
+async function immutableArtifactAlreadyPublished(url, expectedBytes) {
+  const response = await fetch(`${url}?preflight=${Date.now()}`, {
+    cache: "no-store",
+  });
+  if (response.status === 404) return false;
+  if (!response.ok) {
+    throw new Error(
+      `Impossible d'inspecter l'artefact ${url} (HTTP ${response.status}).`,
+    );
+  }
+
+  const publishedBytes = Buffer.from(await response.arrayBuffer());
+  if (
+    publishedBytes.length !== expectedBytes.length ||
+    sha512Base64(publishedBytes) !== sha512Base64(expectedBytes)
+  ) {
+    throw new Error(
+      `Conflit de version ${launcherPackage.version} : ${url} existe avec un contenu différent. Incrémente la version au lieu d'écraser l'artefact publié.`,
+    );
+  }
+  console.log(`Artefact immuable identique réutilisé : ${url}`);
+  return true;
+}
+
+async function verifyPublicFile(url, expectedSize) {
+  const response = await fetch(`${url}?verify=${Date.now()}`, {
+    method: "HEAD",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Artefact publié inaccessible (HTTP ${response.status}) : ${url}`,
+    );
+  }
+  const contentLength = response.headers.get("content-length")?.trim();
+  if (!contentLength || !/^\d+$/.test(contentLength)) {
+    throw new Error(`Taille distante absente ou invalide pour ${url}.`);
+  }
+  const size = Number(contentLength);
+  if (!Number.isSafeInteger(size) || size !== expectedSize) {
+    throw new Error(`Taille distante incorrecte pour ${url}.`);
+  }
+}
+
+// Les artefacts sont publiés avant latest.yml : un client ne peut jamais voir
+// un manifeste dont l'installateur ou le blockmap n'est pas encore disponible.
+const [installerAlreadyPublished, blockmapAlreadyPublished] = await Promise.all(
+  [
+    immutableArtifactAlreadyPublished(
+      `${UPDATE_ROOT}/${installerName}`,
+      installerBytes,
+    ),
+    immutableArtifactAlreadyPublished(
+      `${UPDATE_ROOT}/${blockmapName}`,
+      blockmapBytes,
+    ),
+  ],
 );
-await publish(
-  `releases/windows/${blockmapName}`,
-  blockmapName,
-  "application/octet-stream",
-  31_536_000,
-);
+const installer = installerAlreadyPublished
+  ? { url: `${UPDATE_ROOT}/${installerName}` }
+  : await publish(
+      `releases/windows/${installerName}`,
+      installerBytes,
+      "application/vnd.microsoft.portable-executable",
+      31_536_000,
+      true,
+      false,
+    );
+const blockmap = blockmapAlreadyPublished
+  ? { url: `${UPDATE_ROOT}/${blockmapName}` }
+  : await publish(
+      `releases/windows/${blockmapName}`,
+      blockmapBytes,
+      "application/octet-stream",
+      31_536_000,
+      false,
+      false,
+    );
+await Promise.all([
+  verifyPublicFile(installer.url, installerBytes.length),
+  verifyPublicFile(blockmap.url, blockmapBytes.length),
+]);
+
 const latestInstaller = await publish(
   "releases/YourLauncher-Setup-latest.exe",
-  installerName,
+  installerBytes,
   "application/vnd.microsoft.portable-executable",
   60,
+  true,
   true,
 );
 const metadata = await publish(
   "releases/windows/latest.yml",
-  "latest.yml",
+  metadataBytes,
   "text/yaml; charset=utf-8",
   60,
+  false,
+  true,
 );
 
-console.log(`Canal de mise à jour publié : ${metadata.url}`);
+if (new URL(metadata.url).toString() !== `${UPDATE_ROOT}/latest.yml`) {
+  throw new Error(
+    `Le manifeste a été publié sur ${metadata.url}, mais le client lit ${UPDATE_ROOT}/latest.yml.`,
+  );
+}
+await Promise.all([
+  verifyPublicFile(metadata.url, metadataBytes.length),
+  verifyPublicFile(latestInstaller.url, installerBytes.length),
+]);
+
+// Une lecture GET avec cache-buster confirme aussi le contenu du pointeur
+// mutable, pas seulement son existence.
+const publicMetadata = await fetch(`${metadata.url}?verify=${Date.now()}`, {
+  cache: "no-store",
+});
+if (!publicMetadata.ok) {
+  throw new Error(
+    `latest.yml public inaccessible (HTTP ${publicMetadata.status}).`,
+  );
+}
+const publicMetadataBytes = Buffer.from(await publicMetadata.arrayBuffer());
+if (
+  createHash("sha256").update(publicMetadataBytes).digest("hex") !==
+  createHash("sha256").update(metadataBytes).digest("hex")
+) {
+  throw new Error("Le latest.yml public ne correspond pas au fichier généré.");
+}
+
+console.log(`Canal de mise à jour publié et vérifié : ${metadata.url}`);
 console.log(`Installateur versionné : ${installer.url}`);
+console.log(`Blockmap différentiel : ${blockmap.url}`);
 console.log(`Lien stable du site : ${latestInstaller.url}`);

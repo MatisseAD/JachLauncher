@@ -18,6 +18,7 @@ win:
   icon: build/icon.png
 nsis:
   oneClick: false
+  differentialPackage: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true

@@ -40,6 +40,21 @@ export async function POST(req: Request) {
       );
     }
 
+    if (user.disabledAt) {
+      return NextResponse.json(
+        {
+          error:
+            "Ce compte est suspendu. Contacte l'assistance si tu penses qu'il s'agit d'une erreur.",
+          code: "ACCOUNT_DISABLED",
+        },
+        { status: 403 },
+      );
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
     await createSession({ userId: user.id, username: user.username });
     return NextResponse.json({ ok: true, username: user.username });
   } catch (error) {

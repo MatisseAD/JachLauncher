@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { offlineUuid, resolveAzureClientId, setOfflineAccount } from "./auth";
+import {
+  classifyMicrosoftAuthError,
+  assertSafeMicrosoftAuthorizationUrl,
+  isMinecraftAuthorizationFresh,
+  isRecoverableMicrosoftCacheError,
+  offlineUuid,
+  resolveAzureClientId,
+  setOfflineAccount,
+} from "./auth";
+import { SecureTokenCacheError } from "./secure-token-cache";
 
 describe("authentification hors ligne", () => {
   it("génère un UUID v3 déterministe", () => {
@@ -31,5 +40,66 @@ describe("authentification hors ligne", () => {
     expect(() => resolveAzureClientId("pas-un-guid", undefined)).toThrow(
       /format GUID/,
     );
+  });
+
+  it.each([
+    ["error.gui.closed", /annulée/],
+    ["JACH_AZURE_CLIENT_ID invalide : format GUID", /absent ou mal formé/],
+    ["AADSTS50011 redirect_uri mismatch", /URI de redirection/],
+    ["AADSTS700016", /comptes Microsoft personnels/],
+    ["error.auth.xsts.userNotFound", /profil Xbox/],
+    ["XErr 2148916238", /famille Microsoft/],
+    ["error.auth.xsts.bannedCountry", /pays/],
+    ["error.auth.minecraft.profile NOT_FOUND", /licence Minecraft/],
+  ])("explique l'erreur Microsoft %s", (detail, expected) => {
+    expect(classifyMicrosoftAuthError(detail)).toMatch(expected);
+  });
+
+  it("n'autorise que l'endpoint consumers HTTPS de Microsoft", () => {
+    expect(
+      assertSafeMicrosoftAuthorizationUrl(
+        "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?scope=XboxLive.signin",
+      ),
+    ).toContain("login.microsoftonline.com/consumers/oauth2/v2.0/authorize");
+    expect(() =>
+      assertSafeMicrosoftAuthorizationUrl(
+        "https://attacker.invalid/consumers/oauth2/v2.0/authorize",
+      ),
+    ).toThrow(/URL_REJECTED/);
+  });
+
+  it("rafraîchit un jeton Minecraft cinq minutes avant son expiration", () => {
+    const now = 1_000_000;
+    const authorization = {
+      access_token: "memory-only",
+      client_token: "client",
+      uuid: "0123456789abcdef0123456789abcdef",
+      name: "Steve",
+      user_properties: "{}",
+      meta: { type: "msa", exp: now + 10 * 60 * 1_000 },
+    };
+    expect(isMinecraftAuthorizationFresh(authorization, now)).toBe(true);
+    expect(
+      isMinecraftAuthorizationFresh(
+        { ...authorization, meta: { ...authorization.meta, exp: now + 60_000 } },
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it("réinitialise uniquement un cache corrompu, jamais un coffre indisponible", () => {
+    expect(
+      isRecoverableMicrosoftCacheError(
+        new SecureTokenCacheError("cache_invalid", "corrompu"),
+      ),
+    ).toBe(true);
+    expect(
+      isRecoverableMicrosoftCacheError(
+        new SecureTokenCacheError(
+          "encryption_unavailable",
+          "coffre indisponible",
+        ),
+      ),
+    ).toBe(false);
   });
 });

@@ -12,10 +12,12 @@ import { getDashboardCopy } from "@/i18n/dashboard-content";
 export default function DashboardShell({
   username,
   avatarUrl,
+  isAdmin = false,
   children,
 }: {
   username: string;
   avatarUrl?: string | null;
+  isAdmin?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -53,7 +55,25 @@ export default function DashboardShell({
       mobileLabel: copy.account,
       icon: "user",
     },
+    ...(isAdmin
+      ? [
+          {
+            href: "/admin",
+            label: "Administration",
+            mobileLabel: "Admin",
+            icon: "shield" as const,
+          },
+        ]
+      : []),
   ];
+
+  const mobileNavigation = isAdmin
+    ? navigation.filter((item) =>
+        ["/dashboard", "/dashboard/new", "/admin", "/account"].includes(
+          item.href,
+        ),
+      )
+    : navigation.slice(0, 4);
 
   function isActive(href: string, exact = false) {
     return exact ? pathname === href : pathname.startsWith(href);
@@ -127,7 +147,7 @@ export default function DashboardShell({
       </main>
 
       <nav className="dashboard-mobile-nav" aria-label="Navigation mobile">
-        {navigation.slice(0, 4).map((item) => (
+        {mobileNavigation.map((item) => (
           <Link
             key={item.href}
             href={item.href}

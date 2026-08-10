@@ -22,6 +22,7 @@ import type { LaunchProgress, LauncherSettings } from "../shared-types/ipc";
 import { getCurrentAuth } from "./auth";
 import { markInstanceInstalled } from "./instance";
 import { ensureJava } from "./java";
+import { xmclUserType } from "./launch-auth";
 import {
   assertSafeRemoteUrl,
   manifestFingerprint,
@@ -414,6 +415,7 @@ export async function launchGame(
   settings: LauncherSettings,
   emit: Emit,
   log: Log,
+  beforeSpawn?: () => Promise<void>,
 ): Promise<ChildProcess> {
   const auth = getCurrentAuth();
   if (!auth) throw new Error("Aucun compte connecté.");
@@ -425,7 +427,6 @@ export async function launchGame(
   const versionId = await installGame(manifest, root, javaPath, emit, log);
   await syncContent(manifest, root, emit, log);
 
-  emit({ phase: "launching", label: "Lancement de Minecraft…", percent: null });
   const maxMemory = Math.min(
     65_536,
     Math.max(512, settings.ramMb || manifest.memory.max),
@@ -443,10 +444,14 @@ export async function launchGame(
   const supportsQuickPlay =
     releaseParts !== null && Number.parseInt(releaseParts[1], 10) >= 20;
 
+  // L'installation peut durer plusieurs minutes : la politique distante est
+  // donc revérifiée au dernier instant, une fois tous les fichiers prêts.
+  await beforeSpawn?.();
+  emit({ phase: "launching", label: "Lancement de Minecraft…", percent: null });
   const child = await launch({
     gameProfile: { name: auth.name, id: auth.uuid.replaceAll("-", "") },
     accessToken: auth.access_token,
-    userType: auth.meta?.type === "offline" ? "legacy" : "mojang",
+    userType: xmclUserType(auth.meta?.type),
     properties: JSON.parse(auth.user_properties || "{}") as object,
     launcherName: "JachLauncher",
     launcherBrand: "JachLauncher",

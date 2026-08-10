@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
+import { prisma } from "./db";
 
 const COOKIE_NAME = "jach_session";
 
@@ -63,9 +64,15 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, sessionSecret());
+    if (typeof payload.userId !== "string") return null;
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true, username: true, disabledAt: true },
+    });
+    if (!user || user.disabledAt) return null;
     return {
-      userId: payload.userId as string,
-      username: payload.username as string,
+      userId: user.id,
+      username: user.username,
     };
   } catch {
     return null;

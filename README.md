@@ -124,13 +124,33 @@ traduits.
 Le mode hors-ligne sert au développement et aux serveurs configurés pour
 l’accepter. Il ne prouve pas la propriété d’un compte Mojang/Microsoft.
 
-Pour Microsoft, crée une application Azure compatible avec le flux desktop
-attendu par `msmc`, puis lance :
+Pour Microsoft, crée une application Azure **publique** (aucun secret client)
+qui accepte les comptes Microsoft personnels. Dans **Authentification**, ajoute
+la plateforme **Applications mobiles et de bureau**, enregistre exactement
+`http://localhost` comme URI de redirection et active les flux de client public.
+Le launcher utilise MSAL Node, le navigateur système, un callback loopback
+éphémère, `state` et PKCE S256. Consulte
+[la configuration Azure détaillée](packages/launcher/MICROSOFT_AUTH.md), puis
+lance :
 
 ```powershell
 $env:JACH_AZURE_CLIENT_ID="<client-id>"
 npm run dev:launcher
 ```
+
+Les releases GitHub embarquent ce client ID public depuis la variable Actions
+`JACH_AZURE_CLIENT_ID`. Le workflow refuse de produire un installateur si elle
+est absente ou si elle n'est pas un GUID ; aucun secret OAuth n'est placé dans
+l'application. Le cache MSAL est chiffré avec le coffre-fort natif Electron
+`safeStorage`, restauré silencieusement au redémarrage et supprimé au logout.
+
+Avant chaque lancement, le client appelle aussi
+`POST /api/launcher-access/:slug` sur l'origine du manifeste. La vérification
+est **fail-closed** : une origine auto-hébergée doit donc implémenter cet
+endpoint, faute de quoi le jeu reste bloqué. L'UUID transmis par un client
+desktop n'est pas, à lui seul, une preuve cryptographique d'identité ; les
+bannissements sensibles doivent également être appliqués par le serveur
+Minecraft (whitelist/plugin/proxy).
 
 Pour imposer un binaire Java précis :
 
@@ -157,14 +177,17 @@ vérifie la page d’accueil et un manifeste v2.
 ## Distribuer Electron
 
 ```powershell
-npm run package --workspace=@jach/launcher
+npm run package:win --workspace=@jach/launcher
 ```
 
 Les artefacts sont écrits dans `packages/launcher/release`. Le launcher inclut
 la mise à jour automatique via `electron-updater` : `npm run release:publish`
 publie l’installateur, son blockmap et `latest.yml` sur le canal Vercel Blob
-configuré (avec `BLOB_READ_WRITE_TOKEN`). Pour une diffusion publique, configure
-aussi la signature de code Windows/macOS.
+configuré (avec `BLOB_READ_WRITE_TOKEN`). Le workflow de release refuse une
+publication Windows non signée : configure un certificat Authenticode dans les
+secrets Actions `WINDOWS_CSC_LINK` (fichier PFX ou valeur base64 acceptée par
+electron-builder) et `WINDOWS_CSC_KEY_PASSWORD`. Le mot de passe et le
+certificat ne sont jamais embarqués dans le dépôt.
 
 ## Déploiement
 

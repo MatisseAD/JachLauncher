@@ -1,6 +1,6 @@
 {
   "name": "@jach/launcher",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Launcher Minecraft adaptatif — applique un manifeste distant au runtime",
   "author": "YourLauncher",
@@ -15,9 +15,11 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "package": "electron-vite build && electron-builder"
+    "package": "electron-vite build && electron-builder",
+    "package:win": "electron-vite build && electron-builder --win --publish never"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.5.0",
     "@jach/shared": "*",
     "@jach/ui": "*",
     "@xmcl/core": "^2.15.1",
@@ -25,7 +27,6 @@
     "electron-log": "5.4.4",
     "electron-updater": "6.8.9",
     "extract-zip": "^2.0.1",
-    "msmc": "^5.0.5",
     "tar": "^7.5.22",
     "zod": "^3.25.76"
   },

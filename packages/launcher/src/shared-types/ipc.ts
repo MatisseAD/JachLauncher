@@ -93,7 +93,13 @@ export interface LaunchProgress {
 }
 
 export type DesktopUpdateStatus =
-  "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "error";
 
 /** État du téléchargement de l'application elle-même. */
 export interface DesktopUpdateState {
@@ -103,6 +109,12 @@ export interface DesktopUpdateState {
   transferred?: number;
   total?: number;
   message?: string;
+}
+
+export interface DesktopUpdateActionResult {
+  ok: boolean;
+  state: DesktopUpdateState;
+  error?: string;
 }
 
 export interface LoadManifestResult {
@@ -147,8 +159,10 @@ export interface JachApi {
   instanceStatus(): Promise<InstanceStatus>;
   removeLauncher(slug: string): Promise<SavedLauncher[]>;
   loginMicrosoft(): Promise<AuthResult>;
+  cancelMicrosoftLogin(): Promise<boolean>;
   setOfflineAccount(username: string): Promise<AuthResult>;
   logout(): Promise<void>;
+  openAdminCenter(): Promise<void>;
   launch(): Promise<LaunchResult>;
   repair(): Promise<{ ok: boolean; error?: string }>;
   serverStatus(address: string, port?: number): Promise<ServerStatusResult>;
@@ -165,7 +179,11 @@ export interface JachApi {
   toggleFullscreen(): void;
   onProgress(cb: (p: LaunchProgress) => void): () => void;
   onLog(cb: (line: string) => void): () => void;
+  onAccountChanged(cb: (account: Account | null) => void): () => void;
   onUpdateState(cb: (state: DesktopUpdateState) => void): () => void;
+  getUpdateState(): Promise<DesktopUpdateState>;
+  checkForDesktopUpdate(): Promise<DesktopUpdateActionResult>;
+  installDesktopUpdate(): Promise<DesktopUpdateActionResult>;
 }
 
 declare global {

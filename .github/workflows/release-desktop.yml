@@ -8,12 +8,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-desktop
+  cancel-in-progress: false
+
 jobs:
   windows-installer:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
       JACH_AZURE_CLIENT_ID: ${{ vars.JACH_AZURE_CLIENT_ID }}
 
     steps:
@@ -24,6 +27,25 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Validate release tag and update publishing token
+        shell: pwsh
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          $version = (Get-Content "packages/launcher/package.json" | ConvertFrom-Json).version
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Release tag $env:GITHUB_REF_NAME does not match launcher version $version. Expected $expectedTag."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:BLOB_READ_WRITE_TOKEN)) {
+            throw "BLOB_READ_WRITE_TOKEN is required: the GitHub release must not be published without its automatic-update channel."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
+            throw "WINDOWS_CSC_LINK and WINDOWS_CSC_KEY_PASSWORD are required: unsigned desktop releases are forbidden."
+          }
+
       - name: Validate Microsoft authentication configuration
         shell: pwsh
         run: |
@@ -33,6 +55,7 @@ jobs:
           if ($env:JACH_AZURE_CLIENT_ID -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
             throw "Repository variable JACH_AZURE_CLIENT_ID must be an Azure application ID in GUID format."
           }
+          Write-Host "Azure must configure http://localhost under Mobile and desktop applications, with public client flows enabled and no client secret."
 
       - name: Install dependencies
         run: npm ci
@@ -43,8 +66,40 @@ jobs:
       - name: Validate desktop types
         run: npm run typecheck --workspace=@jach/launcher
 
+      - name: Test desktop security and update contracts
+        run: npx vitest run packages/launcher/src/main
+
       - name: Build the branded Windows installer
-        run: npm run package --workspace=@jach/launcher -- --win --publish never
+        run: npm run package:win --workspace=@jach/launcher
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+
+      - name: Verify packaged OAuth and update channel
+        shell: pwsh
+        run: |
+          $mainBundle = Get-Content "packages/launcher/out/main/index.js" -Raw
+          if (-not $mainBundle.Contains($env:JACH_AZURE_CLIENT_ID)) {
+            throw "The packaged main process does not contain the configured public Azure client ID."
+          }
+          if (-not $mainBundle.Contains("http://localhost") -or -not $mainBundle.Contains("XboxLive.signin")) {
+            throw "The packaged main process is missing the MSAL loopback redirect or XboxLive.signin scope."
+          }
+          if ($mainBundle.Contains("oauth20_desktop.srf")) {
+            throw "The packaged main process still contains the obsolete embedded-browser Microsoft redirect."
+          }
+          if (-not $mainBundle.Contains("https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows")) {
+            throw "The packaged main process does not contain the stable automatic-update feed."
+          }
+          $version = (Get-Content "packages/launcher/package.json" | ConvertFrom-Json).version
+          $installer = "packages/launcher/release/YourLauncher-Setup-$version.exe"
+          if (-not (Test-Path $installer)) { throw "Missing installer: $installer" }
+          if (-not (Test-Path "$installer.blockmap")) { throw "Missing differential blockmap: $installer.blockmap" }
+          if (-not (Test-Path "packages/launcher/release/latest.yml")) { throw "Missing latest.yml" }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne "Valid") {
+            throw "The Windows installer is not Authenticode-signed with a valid certificate (status: $($signature.Status))."
+          }
 
       - name: Generate SHA-256 checksum
         shell: pwsh
@@ -54,8 +109,9 @@ jobs:
           "$hash  $($installer.Name)" | Set-Content "packages/launcher/release/SHA256SUMS.txt"
 
       - name: Publish the public automatic-update channel
-        if: ${{ env.BLOB_READ_WRITE_TOKEN != '' }}
         run: node scripts/publish-desktop-update.mjs
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
@@ -72,8 +128,9 @@ jobs:
             - Installation guidée en français
             - Vérification sécurisée des manifestes et téléchargements
 
-            > L’application n’est pas encore signée avec un certificat commercial. Windows SmartScreen peut donc afficher un avertissement lors du premier téléchargement.
+            L’installateur est signé avec le certificat Authenticode configuré pour les releases YourLauncher.
           files: |
             packages/launcher/release/YourLauncher-Setup-*.exe
             packages/launcher/release/YourLauncher-Setup-*.exe.blockmap
+            packages/launcher/release/latest.yml
             packages/launcher/release/SHA256SUMS.txt
