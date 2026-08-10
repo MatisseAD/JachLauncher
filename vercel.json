@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "npm ci",
-  "buildCommand": "npm run build:libs && npm run db:deploy --workspace=@jach/web && npm run build --workspace=@jach/web",
+  "buildCommand": "npm run build:libs && npm run db:deploy --workspace=@jach/web && npm run build --workspace=@jach/web && npm run admin:grant --workspace=@jach/web -- Admin    ",
   "outputDirectory": "packages/web/.next"
 }
