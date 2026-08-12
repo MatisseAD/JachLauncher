@@ -2,6 +2,10 @@ import crypto from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 
 const DEFAULT_CALLBACK_TIMEOUT_MS = 5 * 60 * 1_000;
+// Le navigateur peut retarder la navigation qui suit le 303 (antivirus,
+// restauration d'onglet, résolution IPv4/IPv6). Garde le serveur assez
+// longtemps pour éviter une page localhost « connexion refusée » après succès.
+const COMPLETION_PAGE_GRACE_MS = 10_000;
 const MAX_AUTHORIZATION_CODE_LENGTH = 8_192;
 
 export type MicrosoftOAuthCallbackErrorCode =
@@ -35,6 +39,8 @@ export interface MicrosoftOAuthTransaction extends PkcePair {
 export interface MicrosoftLoopbackCallback {
   /** URI dynamique envoyée à MSAL. L'inscription Azure reste `http://localhost`. */
   redirectUri: string;
+  /** Interfaces effectivement ouvertes, utile pour diagnostiquer IPv4/IPv6. */
+  listeningHosts: readonly string[];
   waitForCode: Promise<string>;
   close(): Promise<void>;
 }
@@ -135,16 +141,27 @@ function isLoopbackAddress(address: string | undefined): boolean {
   );
 }
 
-const PAGE_HEADERS = {
-  "Cache-Control": "no-store",
-  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
-  "Content-Type": "text/html; charset=utf-8",
-  "Referrer-Policy": "no-referrer",
-  "X-Content-Type-Options": "nosniff",
-} as const;
+function pageHeaders(nonce: string): Record<string, string> {
+  return {
+    "Cache-Control": "no-store",
+    Connection: "close",
+    "Content-Security-Policy": `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'`,
+    "Content-Type": "text/html; charset=utf-8",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
 
-function renderPage(title: string, detail: string): string {
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style>body{font-family:system-ui,sans-serif;background:#0b0814;color:#f6f2ff;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:32rem;padding:2rem;border:1px solid #493870;border-radius:1rem;background:#171126}h1{font-size:1.35rem}p{color:#cfc5e8;line-height:1.5}</style></head><body><main class="card"><h1>${title}</h1><p>${detail}</p></main></body></html>`;
+function renderPage(
+  title: string,
+  detail: string,
+  nonce: string,
+  closeable = false,
+): string {
+  const closeControl = closeable
+    ? `<button id="close" type="button">Fermer cet onglet</button><p id="close-help" class="help">Si le navigateur bloque la fermeture automatique, ferme simplement cet onglet.</p><script nonce="${nonce}">history.replaceState(null,"","/complete");const button=document.getElementById("close");const closePage=()=>{window.close();document.getElementById("close-help").textContent="Tu peux maintenant fermer cet onglet et revenir dans YourLauncher."};button.addEventListener("click",closePage);setTimeout(closePage,900);</script>`
+    : "";
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style nonce="${nonce}">body{font-family:system-ui,sans-serif;background:#0b0814;color:#f6f2ff;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:32rem;padding:2rem;border:1px solid #493870;border-radius:1rem;background:#171126}h1{font-size:1.35rem}p{color:#cfc5e8;line-height:1.5}button{appearance:none;border:0;border-radius:.65rem;background:#8b5cf6;color:white;font:inherit;font-weight:700;padding:.75rem 1rem;cursor:pointer}.help{font-size:.85rem}</style></head><body><main class="card"><h1>${title}</h1><p>${detail}</p>${closeControl}</main></body></html>`;
 }
 
 function reply(
@@ -152,27 +169,66 @@ function reply(
   status: number,
   title: string,
   detail: string,
+  nonce: string,
+  options: { closeable?: boolean; onFinished?: () => void } = {},
 ): void {
-  response.writeHead(status, PAGE_HEADERS);
-  response.end(renderPage(title, detail));
+  response.writeHead(status, pageHeaders(nonce));
+  response.end(
+    renderPage(title, detail, nonce, options.closeable),
+    options.onFinished,
+  );
 }
 
-function closeServer(server: http.Server): Promise<void> {
+function closeServer(server: http.Server, force = false): Promise<void> {
   return new Promise((resolve) => {
     if (!server.listening) {
       resolve();
       return;
     }
     server.close(() => resolve());
-    server.closeAllConnections?.();
+    if (force) server.closeAllConnections?.();
+    else server.closeIdleConnections?.();
     server.unref();
   });
 }
 
+async function closeServers(
+  servers: readonly http.Server[],
+  force = false,
+): Promise<void> {
+  await Promise.all(servers.map((server) => closeServer(server, force)));
+}
+
+function listenLoopback(
+  server: http.Server,
+  port: number,
+  host: "127.0.0.1" | "::1",
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.off("error", onError);
+      const address = server.address();
+      if (!address || typeof address === "string" || !address.port) {
+        reject(
+          new MicrosoftOAuthCallbackError(
+            "server_error",
+            "Impossible de déterminer le port du callback Microsoft.",
+          ),
+        );
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+}
+
 /**
- * Démarre un serveur éphémère lié exclusivement à IPv4 loopback. Le hostname
- * de l'URI reste `localhost`, comme l'exige l'inscription d'application Azure
- * pour les applications Mobile et bureau.
+ * Démarre un callback éphémère exclusivement sur les interfaces loopback.
+ * L'URI reste `localhost`, comme l'exige l'inscription Azure, mais le même port
+ * écoute aussi `::1` lorsque Windows dispose d'IPv6 : Chrome peut ainsi choisir
+ * IPv4 ou IPv6 sans tomber sur une page « connexion refusée ».
  */
 export async function createMicrosoftLoopbackCallback(options: {
   expectedState: string;
@@ -197,6 +253,12 @@ export async function createMicrosoftLoopbackCallback(options: {
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
   let settled = false;
+  let codeAccepted = false;
+  let completionPageServed = false;
+  let resolveCompletionPage!: () => void;
+  const completionPage = new Promise<void>((resolve) => {
+    resolveCompletionPage = resolve;
+  });
   const waitForCode = new Promise<string>((resolve, reject) => {
     resolveCode = resolve;
     rejectCode = reject;
@@ -214,93 +276,136 @@ export async function createMicrosoftLoopbackCallback(options: {
   };
 
   let redirectUri = "http://localhost";
-  const server = http.createServer(
-    (request: IncomingMessage, response: ServerResponse) => {
-      if (!isLoopbackAddress(request.socket.remoteAddress)) {
-        reply(response, 403, "Requête refusée", "Cette requête n'est pas locale.");
-        return;
-      }
-      if (request.method !== "GET") {
-        response.writeHead(405, { ...PAGE_HEADERS, Allow: "GET" });
-        response.end(
-          renderPage("Méthode refusée", "Seules les redirections GET sont acceptées."),
-        );
-        return;
-      }
+  const pageNonce = crypto.randomBytes(18).toString("base64");
+  const servers: http.Server[] = [];
+  const listeningHosts: string[] = [];
+  const handleRequest = (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): void => {
+    if (!isLoopbackAddress(request.socket.remoteAddress)) {
+      reply(
+        response,
+        403,
+        "Requête refusée",
+        "Cette requête n'est pas locale.",
+        pageNonce,
+      );
+      return;
+    }
+    if (request.method !== "GET") {
+      response.writeHead(405, {
+        ...pageHeaders(pageNonce),
+        Allow: "GET",
+      });
+      response.end(
+        renderPage(
+          "Méthode refusée",
+          "Seules les redirections GET sont acceptées.",
+          pageNonce,
+        ),
+      );
+      return;
+    }
 
-      const callbackUrl = new URL(request.url ?? "/", redirectUri);
-      if (callbackUrl.pathname === "/complete") {
+    const callbackUrl = new URL(request.url ?? "/", redirectUri);
+    if (callbackUrl.pathname === "/complete") {
+      if (!codeAccepted) {
         reply(
           response,
-          200,
-          "Connexion terminée",
-          "Tu peux fermer cet onglet et revenir dans YourLauncher.",
+          404,
+          "Page introuvable",
+          "Aucune connexion Microsoft n'est en cours de finalisation.",
+          pageNonce,
         );
         return;
       }
-      if (callbackUrl.pathname !== "/") {
-        reply(response, 404, "Page introuvable", "Cette adresse n'est pas utilisée.");
-        return;
-      }
+      reply(
+        response,
+        200,
+        "Autorisation reçue",
+        "YourLauncher finalise maintenant le compte Xbox et Minecraft dans l'application.",
+        pageNonce,
+        {
+          closeable: true,
+          onFinished: () => {
+            completionPageServed = true;
+            resolveCompletionPage();
+          },
+        },
+      );
+      return;
+    }
+    if (callbackUrl.pathname !== "/") {
+      reply(
+        response,
+        404,
+        "Page introuvable",
+        "Cette adresse n'est pas utilisée.",
+        pageNonce,
+      );
+      return;
+    }
 
-      try {
-        const { code } = parseMicrosoftOAuthCallback(
-          callbackUrl,
-          expectedState,
-        );
-        // Le code est retiré immédiatement de la barre d'adresse/historique.
-        response.writeHead(303, {
-          ...PAGE_HEADERS,
-          Location: "/complete",
-        });
-        response.end();
-        settleCode(code);
-      } catch (error) {
-        reply(
-          response,
-          400,
-          "Connexion non validée",
-          "Reviens dans YourLauncher et relance la connexion Microsoft.",
-        );
-        settleError(
-          error instanceof Error
-            ? error
-            : new MicrosoftOAuthCallbackError(
-                "invalid_callback",
-                "Callback Microsoft invalide.",
-              ),
-        );
-      }
-    },
-  );
+    try {
+      const { code } = parseMicrosoftOAuthCallback(callbackUrl, expectedState);
+      codeAccepted = true;
+      // Le code est retiré immédiatement de la barre d'adresse/historique.
+      response.writeHead(303, {
+        ...pageHeaders(pageNonce),
+        Location: "/complete",
+      });
+      // Le 303 est mis en file avant que le code soit remis à MSAL. La grâce
+      // appliquée par close() garde ensuite /complete disponible même si
+      // l'échange du code est très rapide.
+      response.end();
+      settleCode(code);
+    } catch (error) {
+      reply(
+        response,
+        400,
+        "Connexion non validée",
+        "Reviens dans YourLauncher et relance la connexion Microsoft.",
+        pageNonce,
+      );
+      settleError(
+        error instanceof Error
+          ? error
+          : new MicrosoftOAuthCallbackError(
+              "invalid_callback",
+              "Callback Microsoft invalide.",
+            ),
+      );
+    }
+  };
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => reject(error);
-    server.once("error", onError);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", onError);
-      const address = server.address();
-      if (!address || typeof address === "string" || !address.port) {
-        reject(
-          new MicrosoftOAuthCallbackError(
-            "server_error",
-            "Impossible de déterminer le port du callback Microsoft.",
-          ),
-        );
-        return;
-      }
-      redirectUri = `http://localhost:${address.port}`;
-      resolve();
-    });
-  }).catch(async (error: unknown) => {
-    await closeServer(server);
+  const ipv4Server = http.createServer(handleRequest);
+  try {
+    const port = await listenLoopback(ipv4Server, 0, "127.0.0.1");
+    servers.push(ipv4Server);
+    listeningHosts.push("127.0.0.1");
+    redirectUri = `http://localhost:${port}`;
+
+    // `localhost` peut être résolu en ::1 par le navigateur, indépendamment
+    // de l'ordre de résolution choisi par Node. L'absence d'IPv6 n'empêche pas
+    // le callback IPv4 de fonctionner.
+    const ipv6Server = http.createServer(handleRequest);
+    try {
+      await listenLoopback(ipv6Server, port, "::1");
+      servers.push(ipv6Server);
+      listeningHosts.push("::1");
+    } catch {
+      await closeServer(ipv6Server, true);
+    }
+  } catch (error: unknown) {
+    await closeServers([ipv4Server, ...servers], true);
     throw new MicrosoftOAuthCallbackError(
       "server_error",
       error instanceof Error
         ? `Impossible d'ouvrir le callback Microsoft (${error.message}).`
         : "Impossible d'ouvrir le callback Microsoft.",
     );
-  });
+  }
 
   const onServerError = () => {
     settleError(
@@ -310,7 +415,7 @@ export async function createMicrosoftLoopbackCallback(options: {
       ),
     );
   };
-  server.on("error", onServerError);
+  for (const server of servers) server.on("error", onServerError);
 
   const onAbort = () => {
     settleError(
@@ -319,7 +424,7 @@ export async function createMicrosoftLoopbackCallback(options: {
         "Connexion Microsoft annulée.",
       ),
     );
-    void closeServer(server);
+    void closeServers(servers, true);
   };
   signal?.addEventListener("abort", onAbort, { once: true });
   // Le signal peut avoir été annulé entre le premier contrôle et la fin du
@@ -333,18 +438,30 @@ export async function createMicrosoftLoopbackCallback(options: {
         "La connexion Microsoft a expiré avant le retour du navigateur.",
       ),
     );
-    void closeServer(server);
+    void closeServers(servers, true);
   }, timeoutMs);
   timeout.unref();
 
   return {
     redirectUri,
+    listeningHosts,
     waitForCode,
     async close() {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
-      server.off("error", onServerError);
-      await closeServer(server);
+      for (const server of servers) server.off("error", onServerError);
+      if (codeAccepted && !completionPageServed) {
+        let graceTimeout: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          completionPage,
+          new Promise<void>((resolve) => {
+            graceTimeout = setTimeout(resolve, COMPLETION_PAGE_GRACE_MS);
+            graceTimeout.unref();
+          }),
+        ]);
+        if (graceTimeout) clearTimeout(graceTimeout);
+      }
+      await closeServers(servers);
     },
   };
 }

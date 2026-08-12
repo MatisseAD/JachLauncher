@@ -16,7 +16,11 @@ export async function readResponseTextBounded(
   const declaredHeader = response.headers.get("content-length");
   if (declaredHeader !== null) {
     const declared = Number(declaredHeader);
-    if (!Number.isSafeInteger(declared) || declared < 0 || declared > maximumBytes) {
+    if (
+      !Number.isSafeInteger(declared) ||
+      declared < 0 ||
+      declared > maximumBytes
+    ) {
       await response.body?.cancel().catch(() => undefined);
       throw new ResponseBodyTooLargeError();
     }

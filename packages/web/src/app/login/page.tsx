@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { getAuthCopy } from "@/i18n/auth-content";
 import LogoMark from "@/components/LogoMark";
 import UiIcon from "@/components/UiIcon";
+import { safeLoginReturn } from "@/lib/safe-login-return";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,7 +33,11 @@ export default function LoginPage() {
         setError(data.error ?? t.auth.errLogin);
         return;
       }
-      router.push("/dashboard");
+      router.push(
+        safeLoginReturn(
+          new URLSearchParams(window.location.search).get("next"),
+        ),
+      );
       router.refresh();
     } catch {
       setError(t.auth.errLogin);

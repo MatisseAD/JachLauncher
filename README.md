@@ -15,10 +15,10 @@ est **YourLauncher**.
 
 ```text
 Créateur ── éditeur Next.js ── PostgreSQL
-                  │
-                  └── GET /api/manifest/<code> (manifeste v2 publié)
+                  ├── GET /api/manifest/<code> (manifeste v2 publié)
+                  └── /admin (membres, launchers, clients en direct)
                                       │
-Joueur ── Electron ── approbation de l’empreinte ── instance Minecraft isolée
+Joueur ── Electron ── approbation ── présence 15 s ── instance Minecraft
 ```
 
 | Workspace           | Rôle                                                                    |
@@ -54,8 +54,12 @@ Joueur ── Electron ── approbation de l’empreinte ── instance Minec
 - Le renderer Electron est sandboxé, sans intégration Node, avec une CSP. Les
   liens non HTTP(S), les destinations réseau privées et les chemins traversants
   sont refusés.
-- Les comptes Microsoft ne sont pas persistés sur disque : une reconnexion est
-  demandée après redémarrage. Les jetons restent en mémoire.
+- Les jetons de jeu Microsoft restent uniquement en mémoire. Le cache de
+  session MSAL est persisté sous forme chiffrée par le coffre-fort natif
+  Electron, afin de restaurer silencieusement le compte au redémarrage.
+- Le centre admin Electron ouvre la console web dans une fenêtre isolée. Le
+  client officiel déclare son état toutes les 15 secondes et exécute les
+  commandes d'arrêt de Minecraft ou de fermeture du client.
 
 ## Prérequis
 
@@ -109,10 +113,21 @@ Le site écoute sur `http://localhost:3000`. Dans le launcher, saisis cette
 adresse et le code `serveur-demo`, puis approuve l’empreinte affichée.
 
 L’éditeur web comporte neuf étapes : modèle, identité, design, Minecraft,
-contenu, actualités, communauté, serveur et publication. Chaque fichier
-téléchargeable doit avoir son nom final, son URL directe, sa taille en octets et
-son SHA-256. La publication attend la fin de la sauvegarde et refuse les lignes
-incomplètes.
+contenu, actualités, communauté, serveur et publication. Le design détaillé et
+l’import manuel sont repliés derrière des sections avancées. À l’étape contenu,
+une recherche Modrinth filtrée par version Minecraft, type et loader choisit le
+fichier compatible, ajoute ses dépendances requises et récupère côté serveur son
+URL, sa taille et ses empreintes. L’utilisateur n’a donc aucun SHA-256 à saisir
+pour le parcours normal. L’import direct reste disponible pour les contenus
+absents des catalogues et demande alors les métadonnées de sécurité complètes.
+
+CurseForge est proposé uniquement si `CURSEFORGE_API_KEY` est configuré côté
+serveur. La clé n’est jamais envoyée au navigateur ou au launcher : le manifeste
+reçoit une URL de proxy signée, qui revalide le fichier et diffuse le flux sans
+cache. `CONTENT_CATALOG_SIGNING_SECRET` permet d’utiliser une clé HMAC dédiée ;
+à défaut, `AUTH_SECRET` est utilisé. Consulte
+[la documentation du catalogue](packages/web/CONTENT_CATALOG.md) avant de
+l’activer en production.
 
 La navigation publique du site possède six dictionnaires (FR, EN, ES, DE, PT,
 IT). Les écrans métier détaillés de l’éditeur et le launcher desktop restent en
@@ -138,11 +153,24 @@ $env:JACH_AZURE_CLIENT_ID="<client-id>"
 npm run dev:launcher
 ```
 
-Les releases GitHub embarquent ce client ID public depuis la variable Actions
-`JACH_AZURE_CLIENT_ID`. Le workflow refuse de produire un installateur si elle
-est absente ou si elle n'est pas un GUID ; aucun secret OAuth n'est placé dans
-l'application. Le cache MSAL est chiffré avec le coffre-fort natif Electron
-`safeStorage`, restauré silencieusement au redémarrage et supprimé au logout.
+`JACH_ID` est également accepté comme alias pour les environnements déjà
+configurés avec ce nom. `JACH_AZURE_CLIENT_ID` reste le nom canonique et est
+prioritaire lorsque les deux variables existent.
+
+L’identifiant public actuellement configuré est embarqué dans le launcher. Les
+releases peuvent le remplacer depuis la variable Actions
+`JACH_AZURE_CLIENT_ID`, ou depuis l’alias `JACH_ID`. Le workflow refuse toute
+valeur qui n’est pas un GUID ; aucun secret OAuth n’est placé dans
+l’application. Le cache MSAL est chiffré avec le coffre-fort
+natif Electron `safeStorage`, restauré silencieusement au redémarrage et
+supprimé au logout.
+
+Le dépôt contient un ID d'application public par défaut ; les variables ci-dessus
+servent à le remplacer pour un autre environnement. Pour tout nouvel ID Azure,
+Mojang impose aussi une
+[demande d'accès aux API Java](https://help.minecraft.net/hc/en-us/articles/16254801392141) :
+sans cette autorisation serveur, Microsoft et Xbox peuvent accepter la connexion
+avant que Minecraft Services ne refuse finalement le compte.
 
 Avant chaque lancement, le client appelle aussi
 `POST /api/launcher-access/:slug` sur l'origine du manifeste. La vérification
@@ -182,12 +210,28 @@ npm run package:win --workspace=@jach/launcher
 
 Les artefacts sont écrits dans `packages/launcher/release`. Le launcher inclut
 la mise à jour automatique via `electron-updater` : `npm run release:publish`
-publie l’installateur, son blockmap et `latest.yml` sur le canal Vercel Blob
-configuré (avec `BLOB_READ_WRITE_TOKEN`). Le workflow de release refuse une
+publie l’installateur, son blockmap et `latest.yml` sur un canal Vercel Blob
+signé isolé. Configure l’URL publique dans la variable Actions
+`JACH_SIGNED_UPDATE_FEED_URL` et son jeton dans le secret
+`SIGNED_BLOB_READ_WRITE_TOKEN`. Le workflow de release refuse une
 publication Windows non signée : configure un certificat Authenticode dans les
 secrets Actions `WINDOWS_CSC_LINK` (fichier PFX ou valeur base64 acceptée par
 electron-builder) et `WINDOWS_CSC_KEY_PASSWORD`. Le mot de passe et le
-certificat ne sont jamais embarqués dans le dépôt.
+certificat ne sont jamais embarqués dans le dépôt. Ajoute aussi la variable
+Actions `JACH_WINDOWS_PUBLISHER_NAME`, exactement égale au nom simple de
+l'éditeur du certificat. Ce nom est épinglé dans `app-update.yml` et comparé à
+la signature réelle avant toute publication.
+
+La transition depuis les clients historiques 0.2.1 non signés nécessite une
+seule publication d’amorçage : définis temporairement
+`JACH_LEGACY_BOOTSTRAP_VERSION` sur la version signée concernée et fournis
+`LEGACY_BLOB_READ_WRITE_TOKEN`. Cette release est d’abord publiée sur le
+nouveau canal signé, puis annoncée sur l’ancien canal. Dès sa publication,
+révoque définitivement le jeton historique et supprime le secret GitHub. Les
+versions suivantes utilisent exclusivement le nouveau store et vérifient le
+nom de l’éditeur Authenticode embarqué dans `app-update.yml`. La toute première
+transition reste nécessairement fondée sur la confiance du client 0.2.1 dans
+son ancien canal mutable ; fais-la depuis un environnement CI verrouillé.
 
 ## Déploiement
 

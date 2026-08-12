@@ -2,7 +2,7 @@ appId: app.yourlauncher.desktop
 productName: YourLauncher
 publish:
   provider: generic
-  url: https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows
+  url: ${env.JACH_SIGNED_UPDATE_FEED_URL}
   channel: latest
 directories:
   output: release
@@ -16,6 +16,8 @@ files:
 win:
   target: nsis
   icon: build/icon.png
+  publisherName: "${env.JACH_WINDOWS_PUBLISHER_NAME}"
+  verifyUpdateCodeSignature: true
 nsis:
   oneClick: false
   differentialPackage: true

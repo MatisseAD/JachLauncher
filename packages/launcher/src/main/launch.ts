@@ -416,6 +416,7 @@ export async function launchGame(
   emit: Emit,
   log: Log,
   beforeSpawn?: () => Promise<void>,
+  onSpawn?: (child: ChildProcess) => void,
 ): Promise<ChildProcess> {
   const auth = getCurrentAuth();
   if (!auth) throw new Error("Aucun compte connecté.");
@@ -443,6 +444,11 @@ export async function launchGame(
   );
   const supportsQuickPlay =
     releaseParts !== null && Number.parseInt(releaseParts[1], 10) >= 20;
+
+  // Ces métadonnées décrivent l'instance installée, pas l'état du
+  // processus. Les écrire avant le dernier contrôle d'accès évite toute
+  // attente disque après le démarrage du processus détaché.
+  await markInstanceInstalled(manifest, versionId, baseUrl);
 
   // L'installation peut durer plusieurs minutes : la politique distante est
   // donc revérifiée au dernier instant, une fois tous les fichiers prêts.
@@ -475,6 +481,11 @@ export async function launchGame(
     extraExecOption: { detached: true },
   });
 
+  // Le processus est détaché : le main process doit en prendre possession
+  // avant toute autre attente (index disque, rendu, etc.), sinon une commande
+  // distante ou une fermeture dans cette fenêtre ne pourrait plus l'arrêter.
+  onSpawn?.(child);
+
   child.stdout?.on("data", (data: Buffer) => log(data.toString().trim()));
   child.stderr?.on("data", (data: Buffer) =>
     log(`[stderr] ${data.toString().trim()}`),
@@ -498,7 +509,6 @@ export async function launchGame(
       once(child, "error").then(([error]) => Promise.reject(error)),
     ]);
   }
-  await markInstanceInstalled(manifest, versionId, baseUrl);
   emit({ phase: "running", label: "Minecraft est lancé 🎮", percent: 100 });
   return child;
 }

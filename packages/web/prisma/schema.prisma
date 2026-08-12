@@ -11,26 +11,27 @@ datasource db {
 }
 
 model User {
-  id                 String            @id @default(cuid())
-  username           String            @unique
-  email              String?           @unique
-  avatarUrl          String?
-  password           String // hash bcrypt
-  role               String            @default("user")
-  disabledAt         DateTime?         @db.Timestamptz(3)
-  disabledReason     String?
-  disabledById       String?
-  disabledBy         User?             @relation("UserDisabler", fields: [disabledById], references: [id], onDelete: Restrict)
-  disabledUsers      User[]            @relation("UserDisabler")
-  lastLoginAt        DateTime?         @db.Timestamptz(3)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  launchers          Launcher[]
-  suspendedLaunchers Launcher[]        @relation("LauncherSuspender")
-  createdPlayerBans  PlayerBan[]       @relation("PlayerBanCreator")
-  revokedPlayerBans  PlayerBan[]       @relation("PlayerBanRevoker")
-  adminAuditLogs     AdminAuditLog[]   @relation("AdminAuditActor")
-  uploadUsage        UserUploadUsage[]
+  id                      String                  @id @default(cuid())
+  username                String                  @unique
+  email                   String?                 @unique
+  avatarUrl               String?
+  password                String // hash bcrypt
+  role                    String                  @default("user")
+  disabledAt              DateTime?               @db.Timestamptz(3)
+  disabledReason          String?
+  disabledById            String?
+  disabledBy              User?                   @relation("UserDisabler", fields: [disabledById], references: [id], onDelete: Restrict)
+  disabledUsers           User[]                  @relation("UserDisabler")
+  lastLoginAt             DateTime?               @db.Timestamptz(3)
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  launchers               Launcher[]
+  suspendedLaunchers      Launcher[]              @relation("LauncherSuspender")
+  createdPlayerBans       PlayerBan[]             @relation("PlayerBanCreator")
+  revokedPlayerBans       PlayerBan[]             @relation("PlayerBanRevoker")
+  adminAuditLogs          AdminAuditLog[]         @relation("AdminAuditActor")
+  commandedClientSessions LauncherClientSession[] @relation("LauncherClientSessionCommander")
+  uploadUsage             UserUploadUsage[]
 
   @@index([disabledById])
   @@index([disabledAt])
@@ -112,10 +113,11 @@ model Launcher {
   alert         String @default("{\"active\":false,\"kind\":\"info\",\"message\":\"\"}")
   jvmArgs       String @default("[]")
 
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  dailyMetrics LauncherDailyMetric[]
-  playerBans   PlayerBan[]
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  dailyMetrics   LauncherDailyMetric[]
+  playerBans     PlayerBan[]
+  clientSessions LauncherClientSession[]
 
   @@index([ownerId])
   @@index([suspendedById])
@@ -191,4 +193,38 @@ model AdminAuditLog {
   @@index([createdAt, id], map: "admin_audit_logs_created_at_id_idx")
   @@index([action, createdAt], map: "admin_audit_logs_action_created_at_idx")
   @@map("admin_audit_logs")
+}
+
+// Session de présence courte d'un client desktop. Le jeton porteur n'est
+// jamais stocké : seul son SHA-256 permet au serveur d'authentifier les
+// heartbeats et la fermeture de cette session précise.
+model LauncherClientSession {
+  id                        String    @id @default(cuid())
+  launcherId                String    @map("launcher_id")
+  launcher                  Launcher  @relation(fields: [launcherId], references: [id], onDelete: Cascade)
+  tokenHash                 String    @unique @map("token_hash")
+  subjectType               String    @map("subject_type")
+  subjectValue              String    @map("subject_value")
+  username                  String
+  clientVersion             String    @map("client_version")
+  state                     String    @default("open")
+  openedAt                  DateTime  @default(now()) @map("opened_at") @db.Timestamptz(3)
+  lastHeartbeatAt           DateTime  @default(now()) @map("last_heartbeat_at") @db.Timestamptz(3)
+  expiresAt                 DateTime  @map("expires_at") @db.Timestamptz(3)
+  gameStartedAt             DateTime? @map("game_started_at") @db.Timestamptz(3)
+  closedAt                  DateTime? @map("closed_at") @db.Timestamptz(3)
+  closedReason              String?   @map("closed_reason")
+  pendingCommandId          String?   @map("pending_command_id")
+  pendingCommand            String?   @map("pending_command")
+  pendingCommandReason      String?   @map("pending_command_reason")
+  pendingCommandAt          DateTime? @map("pending_command_at") @db.Timestamptz(3)
+  pendingCommandById        String?   @map("pending_command_by_id")
+  pendingCommandBy          User?     @relation("LauncherClientSessionCommander", fields: [pendingCommandById], references: [id], onDelete: Restrict)
+  lastAcknowledgedCommandId String?   @map("last_acknowledged_command_id")
+
+  @@index([launcherId], map: "launcher_client_sessions_launcher_id_idx")
+  @@index([pendingCommandById], map: "launcher_client_sessions_pending_command_by_id_idx")
+  @@index([subjectType, subjectValue, closedAt], map: "launcher_client_sessions_identity_idx")
+  @@index([lastHeartbeatAt, id], map: "launcher_client_sessions_heartbeat_id_idx")
+  @@map("launcher_client_sessions")
 }

@@ -22,7 +22,11 @@ const XstsTokenSchema = z.object({
 
 const MinecraftTokenSchema = z.object({
   access_token: z.string().min(1).max(32_768),
-  expires_in: z.number().int().positive().max(7 * 24 * 60 * 60),
+  expires_in: z
+    .number()
+    .int()
+    .positive()
+    .max(7 * 24 * 60 * 60),
 });
 
 const EntitlementsSchema = z.object({
@@ -44,10 +48,7 @@ export class MicrosoftServicesError extends Error {
   }
 }
 
-type FetchLike = (
-  input: string | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 async function requestJson(
   fetchImpl: FetchLike,
@@ -102,7 +103,10 @@ async function readJson(response: Response, code: string): Promise<unknown> {
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new MicrosoftServicesError(`${code}_INVALID_RESPONSE`, response.status);
+    throw new MicrosoftServicesError(
+      `${code}_INVALID_RESPONSE`,
+      response.status,
+    );
   }
 }
 
@@ -112,6 +116,18 @@ function jsonRequest(body: unknown): RequestInit {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function xboxJsonRequest(body: unknown): RequestInit {
+  return {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "x-xbl-contract-version": "1",
     },
     body: JSON.stringify(body),
   };
@@ -145,6 +161,15 @@ function xstsErrorCode(payload: unknown): string | null {
   }
 }
 
+function isUnapprovedMinecraftApp(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const errorMessage =
+    "errorMessage" in payload && typeof payload.errorMessage === "string"
+      ? payload.errorMessage
+      : "";
+  return /invalid app registration|aka\.ms\/AppRegInfo/i.test(errorMessage);
+}
+
 /**
  * Échanges REST Xbox/XSTS/Minecraft. Les jetons ne quittent jamais ce module,
  * ne sont inclus dans aucune erreur et ne sont jamais journalisés.
@@ -166,7 +191,7 @@ export async function exchangeMicrosoftTokenForMinecraft(
   const xboxResponse = await requestJson(
     fetchImpl,
     "https://user.auth.xboxlive.com/user/authenticate",
-    jsonRequest({
+    xboxJsonRequest({
       Properties: {
         AuthMethod: "RPS",
         SiteName: "user.auth.xboxlive.com",
@@ -179,7 +204,10 @@ export async function exchangeMicrosoftTokenForMinecraft(
     options.signal,
   );
   if (!xboxResponse.ok) {
-    throw new MicrosoftServicesError("error.auth.xboxLive", xboxResponse.status);
+    throw new MicrosoftServicesError(
+      "error.auth.xboxLive",
+      xboxResponse.status,
+    );
   }
   const xbox = XboxTokenSchema.safeParse(xboxResponse.payload);
   if (!xbox.success) {
@@ -190,7 +218,7 @@ export async function exchangeMicrosoftTokenForMinecraft(
   const xstsResponse = await requestJson(
     fetchImpl,
     "https://xsts.auth.xboxlive.com/xsts/authorize",
-    jsonRequest({
+    xboxJsonRequest({
       Properties: { SandboxId: "RETAIL", UserTokens: [xbox.data.Token] },
       RelyingParty: "rp://api.minecraftservices.com/",
       TokenType: "JWT",
@@ -221,6 +249,15 @@ export async function exchangeMicrosoftTokenForMinecraft(
     options.signal,
   );
   if (!minecraftLoginResponse.ok) {
+    if (
+      minecraftLoginResponse.status === 403 &&
+      isUnapprovedMinecraftApp(minecraftLoginResponse.payload)
+    ) {
+      throw new MicrosoftServicesError(
+        "MINECRAFT_APP_REGISTRATION_NOT_APPROVED",
+        minecraftLoginResponse.status,
+      );
+    }
     throw new MicrosoftServicesError(
       "error.auth.minecraft.login",
       minecraftLoginResponse.status,

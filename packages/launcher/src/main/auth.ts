@@ -10,6 +10,7 @@ import {
   createMicrosoftLoopbackCallback,
   createMicrosoftOAuthTransaction,
 } from "./microsoft-oauth";
+import { MicrosoftAuthLifecycle } from "./microsoft-auth-lifecycle";
 import { exchangeMicrosoftTokenForMinecraft } from "./microsoft-xbox";
 import {
   createEncryptedMsalCachePlugin,
@@ -26,8 +27,7 @@ const BUNDLED_AZURE_CLIENT_ID =
   typeof __JACH_AZURE_CLIENT_ID__ === "string"
     ? __JACH_AZURE_CLIENT_ID__
     : undefined;
-const MICROSOFT_AUTHORITY =
-  "https://login.microsoftonline.com/consumers";
+const MICROSOFT_AUTHORITY = "https://login.microsoftonline.com/consumers";
 export const MICROSOFT_SCOPES = ["XboxLive.signin", "offline_access"];
 const MSAL_CACHE_FILENAME = "microsoft-msal-cache.bin";
 
@@ -59,10 +59,7 @@ interface AuthErrorShape {
 // Les jetons de jeu restent uniquement en mémoire. Seul le cache MSAL est
 // persisté et il est chiffré par safeStorage.
 let currentAuth: MinecraftAuthorization | null = null;
-let microsoftLoginPromise: Promise<AuthResult> | null = null;
-let microsoftLoginAbortController: AbortController | null = null;
-let microsoftRestorePromise: Promise<AuthResult> | null = null;
-let microsoftRestoreAbortController: AbortController | null = null;
+const microsoftAuthLifecycle = new MicrosoftAuthLifecycle<AuthResult>();
 let microsoftClientPromise: Promise<MicrosoftClient> | null = null;
 let microsoftCacheStorePromise: Promise<EncryptedTokenCacheStore> | null = null;
 
@@ -73,12 +70,17 @@ let microsoftCacheStorePromise: Promise<EncryptedTokenCacheStore> | null = null;
 export function resolveAzureClientId(
   runtimeClientId: string | undefined = process.env.JACH_AZURE_CLIENT_ID,
   bundledClientId: string | undefined = BUNDLED_AZURE_CLIENT_ID,
+  runtimeAlias: string | undefined = process.env.JACH_ID,
 ): string | null {
-  const clientId = (runtimeClientId?.trim() || bundledClientId?.trim()) ?? "";
+  const clientId =
+    runtimeClientId?.trim() ||
+    runtimeAlias?.trim() ||
+    bundledClientId?.trim() ||
+    "";
   if (!clientId) return null;
   if (!AZURE_CLIENT_ID_PATTERN.test(clientId)) {
     throw new Error(
-      "JACH_AZURE_CLIENT_ID invalide : un identifiant d'application Azure au format GUID est attendu.",
+      "JACH_AZURE_CLIENT_ID (ou JACH_ID) invalide : un identifiant d'application Azure au format GUID est attendu.",
     );
   }
   return clientId;
@@ -133,25 +135,42 @@ export function classifyMicrosoftAuthError(detail: string): string {
   ) {
     return "Connexion Microsoft annulée.";
   }
-  if (/callback.*timeout|MICROSOFT_SERVICE_TIMEOUT|temporisation|expir/i.test(detail)) {
+  if (
+    /callback.*timeout|MICROSOFT_SERVICE_TIMEOUT|temporisation|expir/i.test(
+      detail,
+    )
+  ) {
     return "La connexion Microsoft a expiré. Vérifie Internet puis relance la connexion.";
   }
   if (/state_mismatch|état de sécurité|state mismatch/i.test(detail)) {
     return "La réponse Microsoft n'a pas passé le contrôle de sécurité. Ferme les anciens onglets de connexion puis réessaie.";
   }
-  if (/encryption_unavailable|chiffrement sécurisé.*indisponible/i.test(detail)) {
+  if (
+    /encryption_unavailable|chiffrement sécurisé.*indisponible/i.test(detail)
+  ) {
     return "La connexion Microsoft nécessite le coffre-fort chiffré de Windows, indisponible sur ce système. Redémarre ta session Windows puis réessaie.";
   }
-  if (/cache_invalid|cache Microsoft.*(?:invalide|déverrouillé)/i.test(detail)) {
+  if (
+    /cache_invalid|cache Microsoft.*(?:invalide|déverrouillé)/i.test(detail)
+  ) {
     return "La session Microsoft enregistrée est illisible. Déconnecte le compte puis reconnecte-le.";
   }
-  if (/AUTH_CONFIG_MISSING|JACH_AZURE_CLIENT_ID|client ID.*GUID|format GUID/i.test(detail)) {
+  if (/MICROSOFT_MULTIPLE_ACCOUNTS/i.test(detail)) {
+    return "Plusieurs sessions Microsoft incomplètes ont été retrouvées après un arrêt inattendu. Relance la connexion pour choisir le bon compte en toute sécurité.";
+  }
+  if (
+    /AUTH_CONFIG_MISSING|JACH_(?:AZURE_CLIENT_)?ID|client ID.*GUID|format GUID/i.test(
+      detail,
+    )
+  ) {
     return "Configuration Microsoft invalide : le client ID Azure public de cette version est absent ou mal formé.";
   }
   if (/AADSTS50011|reply url|redirect[_ ]uri|redirect URI/i.test(detail)) {
     return "Configuration Microsoft invalide : ajoute http://localhost aux URI de redirection « Applications mobiles et de bureau » dans Azure.";
   }
-  if (/AADSTS700016|AADSTS50194|invalid.client|unauthorized_client/i.test(detail)) {
+  if (
+    /AADSTS700016|AADSTS50194|invalid.client|unauthorized_client/i.test(detail)
+  ) {
     return "Configuration Microsoft invalide : le client ID doit appartenir à une application Azure publique acceptant les comptes Microsoft personnels.";
   }
   if (/error\.auth\.xsts\.userNotFound|2148916233/i.test(detail)) {
@@ -176,10 +195,15 @@ export function classifyMicrosoftAuthError(detail: string): string {
   if (/error\.auth\.xboxLive|error\.auth\.xsts/i.test(detail)) {
     return "Xbox Live a refusé la connexion. Vérifie le profil Xbox et les autorisations familiales du compte.";
   }
+  if (/MINECRAFT_APP_REGISTRATION_NOT_APPROVED/i.test(detail)) {
+    return "Microsoft et Xbox ont accepté le compte, mais ce client ID Azure n'est pas encore autorisé par Mojang pour les API Minecraft Java. Demande son ajout via la procédure officielle « Java Edition Game Service API Review » puis réessaie.";
+  }
   if (/interaction_required|consent_required|login_required/i.test(detail)) {
     return "La session Microsoft doit être renouvelée. Relance la connexion et valide la demande dans le navigateur.";
   }
-  if (/MICROSOFT_NETWORK_ERROR|network|fetch failed|ENOTFOUND|ECONN/i.test(detail)) {
+  if (
+    /MICROSOFT_NETWORK_ERROR|network|fetch failed|ENOTFOUND|ECONN/i.test(detail)
+  ) {
     return "Les services Microsoft sont injoignables. Vérifie Internet, le pare-feu et l'heure de Windows, puis réessaie.";
   }
   if (/error\.auth\.microsoft|AADSTS|oauth|invalid_grant/i.test(detail)) {
@@ -256,10 +280,7 @@ async function getMicrosoftClient(): Promise<MicrosoftClient> {
     const clientId = resolveAzureClientId();
     if (!clientId) throw new Error("AUTH_CONFIG_MISSING");
     const [{ PublicClientApplication, LogLevel }, cacheStore] =
-      await Promise.all([
-        import("@azure/msal-node"),
-        getMicrosoftCacheStore(),
-      ]);
+      await Promise.all([import("@azure/msal-node"), getMicrosoftCacheStore()]);
     const application = new PublicClientApplication({
       auth: {
         clientId,
@@ -334,7 +355,9 @@ async function acquireInteractiveToken(
   }
 }
 
-function toAccount(authorization: MinecraftAuthorization): Account {
+export function microsoftAuthorizationToAccount(
+  authorization: MinecraftAuthorization,
+): Account {
   return {
     type: "microsoft",
     username: authorization.name,
@@ -354,24 +377,135 @@ async function useMicrosoftToken(
     result.accessToken,
     { signal, onProgress },
   );
-  if (!shouldCommit()) {
+  if (!canCommitMicrosoftAuthorization(signal, shouldCommit)) {
     return { ok: false, error: "Connexion Microsoft annulée." };
   }
   currentAuth = authorization;
-  return { ok: true, account: toAccount(authorization) };
+  return {
+    ok: true,
+    account: microsoftAuthorizationToAccount(authorization),
+  };
 }
 
-async function keepOnlySelectedMsalAccount(
-  application: PublicClientApplication,
-  result: AuthenticationResult,
+type MicrosoftMsalAccount = NonNullable<AuthenticationResult["account"]>;
+
+/**
+ * Une restauration silencieuse n'a aucun écran permettant de choisir un compte.
+ * Après un crash au milieu d'un changement de compte, MSAL peut brièvement
+ * contenir A et B : en choisir un selon l'ordre du cache serait non déterministe.
+ */
+export function selectUnambiguousMicrosoftAccount<T>(
+  accounts: readonly T[],
+): T | null {
+  if (accounts.length === 0) return null;
+  if (accounts.length !== 1) throw new Error("MICROSOFT_MULTIPLE_ACCOUNTS");
+  return accounts[0];
+}
+
+/**
+ * MSAL Node fusionne `deserialize` avec certaines entrées déjà en mémoire.
+ * Après un rollback, on restaure donc d'abord le snapshot chiffré puis on
+ * abandonne entièrement l'instance MSAL devenue sale. Même si l'écriture
+ * échoue, cette instance ne doit jamais être réutilisée.
+ */
+export async function restoreMicrosoftCacheSnapshot(
+  snapshot: string,
+  saveSnapshot: (value: string) => Promise<void>,
+  discardClient: () => void,
 ): Promise<void> {
-  if (!result.account) return;
-  const accounts = await application.getAllAccounts();
-  for (const account of accounts) {
-    if (account.homeAccountId !== result.account.homeAccountId) {
-      await application.getTokenCache().removeAccount(account);
-    }
+  try {
+    await saveSnapshot(snapshot);
+  } finally {
+    discardClient();
   }
+}
+
+interface MicrosoftAccountSwitchTransaction {
+  signal: AbortSignal;
+  loadAccounts: () => Promise<MicrosoftMsalAccount[]>;
+  serializeCache: () => string;
+  restoreCache: (snapshot: string) => Promise<void>;
+  acquireToken: () => Promise<AuthenticationResult>;
+  exchangeToken: (
+    result: AuthenticationResult,
+  ) => Promise<MinecraftAuthorization>;
+  removeAccount: (account: MicrosoftMsalAccount) => Promise<void>;
+  commitAuthorization: (authorization: MinecraftAuthorization) => void;
+}
+
+/**
+ * Bascule de compte en deux phases : l'échange Minecraft est terminé avant de
+ * toucher à l'ancien compte MSAL. En cas d'échec ou d'annulation, le snapshot
+ * pré-login est restauré dans le stockage chiffré et l'instance MSAL sale est
+ * abandonnée. La persistance MSAL n'offre pas de transaction native ; ce
+ * snapshot et l'écriture atomique du store constituent donc le rollback le
+ * plus strict disponible.
+ */
+export async function runMicrosoftAccountSwitchTransaction(
+  transaction: MicrosoftAccountSwitchTransaction,
+): Promise<AuthResult> {
+  // getAllAccounts hydrate d'abord le cache via le plugin MSAL. Sans cela, le
+  // snapshot pourrait être vide alors qu'un compte A existe bien sur disque.
+  await transaction.loadAccounts();
+  const cacheSnapshot = transaction.serializeCache();
+
+  try {
+    const result = await transaction.acquireToken();
+    if (!result.account) throw new Error("MICROSOFT_ACCOUNT_MISSING");
+    if (!result.accessToken) {
+      throw new Error("MICROSOFT_ACCESS_TOKEN_MISSING");
+    }
+    if (transaction.signal.aborted) {
+      throw new Error("MICROSOFT_LOGIN_CANCELLED");
+    }
+
+    const authorization = await transaction.exchangeToken(result);
+    if (transaction.signal.aborted) {
+      throw new Error("MICROSOFT_LOGIN_CANCELLED");
+    }
+
+    // Phase de commit. Si une suppression échoue ou si une annulation arrive
+    // pendant une opération MSAL, le catch restaure le snapshot complet.
+    const selectedAccountId = result.account.homeAccountId;
+    const accounts = await transaction.loadAccounts();
+    for (const account of accounts) {
+      if (transaction.signal.aborted) {
+        throw new Error("MICROSOFT_LOGIN_CANCELLED");
+      }
+      if (account.homeAccountId !== selectedAccountId) {
+        await transaction.removeAccount(account);
+      }
+    }
+    if (transaction.signal.aborted) {
+      throw new Error("MICROSOFT_LOGIN_CANCELLED");
+    }
+
+    // Aucun await entre le dernier contrôle d'annulation et le commit mémoire :
+    // currentAuth et le cache final deviennent observables ensemble.
+    transaction.commitAuthorization(authorization);
+    return {
+      ok: true,
+      account: microsoftAuthorizationToAccount(authorization),
+    };
+  } catch (error) {
+    try {
+      await transaction.restoreCache(cacheSnapshot);
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        "MICROSOFT_LOGIN_ROLLBACK_FAILED",
+        { cause: rollbackError },
+      );
+    }
+    throw error;
+  }
+}
+
+export function canCommitMicrosoftAuthorization(
+  signal: AbortSignal | undefined,
+  shouldCommit: () => boolean,
+): boolean {
+  return !signal?.aborted && shouldCommit();
 }
 
 async function performMicrosoftLogin(
@@ -379,27 +513,37 @@ async function performMicrosoftLogin(
   onProgress?: (stage: string) => void,
 ): Promise<AuthResult> {
   try {
-    const pendingRestore = microsoftRestorePromise;
-    microsoftRestoreAbortController?.abort();
-    if (pendingRestore) await pendingRestore;
     const { application, cacheStore } = await getMicrosoftClient();
     // Préflight explicite : jamais de connexion si le cache ne peut pas être
     // chiffré/déchiffré par le coffre-fort natif.
-    try {
-      await cacheStore.load();
-    } catch (error) {
-      if (!isRecoverableMicrosoftCacheError(error)) throw error;
-      // Un cache indéchiffrable ne contient plus de session utilisable. On
-      // supprime uniquement ce fichier chiffré avant le nouveau flux OAuth.
-      await cacheStore.clear();
-    }
-    const result = await acquireInteractiveToken(
-      application,
+    await prepareMicrosoftCacheForInteractiveLogin(cacheStore);
+    const tokenCache = application.getTokenCache();
+    return await runMicrosoftAccountSwitchTransaction({
       signal,
-      onProgress,
-    );
-    await keepOnlySelectedMsalAccount(application, result);
-    return await useMicrosoftToken(result, signal, onProgress);
+      loadAccounts: () => application.getAllAccounts(),
+      serializeCache: () => tokenCache.serialize(),
+      async restoreCache(snapshot) {
+        await restoreMicrosoftCacheSnapshot(
+          snapshot,
+          (value) => cacheStore.save(value),
+          () => {
+            microsoftClientPromise = null;
+          },
+        );
+      },
+      acquireToken: () =>
+        acquireInteractiveToken(application, signal, onProgress),
+      async exchangeToken(result) {
+        return exchangeMicrosoftTokenForMinecraft(result.accessToken, {
+          signal,
+          onProgress,
+        });
+      },
+      removeAccount: (account) => tokenCache.removeAccount(account),
+      commitAuthorization(authorization) {
+        currentAuth = authorization;
+      },
+    });
   } catch (error) {
     return { ok: false, error: describeMicrosoftAuthError(error) };
   }
@@ -412,29 +556,33 @@ export function isRecoverableMicrosoftCacheError(error: unknown): boolean {
   );
 }
 
+export async function prepareMicrosoftCacheForInteractiveLogin(
+  cacheStore: Pick<EncryptedTokenCacheStore, "load" | "clear">,
+): Promise<"ready" | "reset"> {
+  try {
+    await cacheStore.load();
+    return "ready";
+  } catch (error) {
+    if (!isRecoverableMicrosoftCacheError(error)) throw error;
+    // Un cache illisible ne contient plus de session utilisable. On supprime
+    // uniquement ce fichier chiffré avant le nouveau flux OAuth ; une panne du
+    // coffre-fort, elle, n'est jamais contournée par un stockage en clair.
+    await cacheStore.clear();
+    return "reset";
+  }
+}
+
 /** Une seule connexion interactive peut être active à la fois. */
 export function loginMicrosoft(
   onProgress?: (stage: string) => void,
 ): Promise<AuthResult> {
-  if (microsoftLoginPromise) return microsoftLoginPromise;
-  const controller = new AbortController();
-  microsoftLoginAbortController = controller;
-  microsoftLoginPromise = performMicrosoftLogin(
-    controller.signal,
-    onProgress,
-  ).finally(() => {
-    microsoftLoginPromise = null;
-    if (microsoftLoginAbortController === controller) {
-      microsoftLoginAbortController = null;
-    }
-  });
-  return microsoftLoginPromise;
+  return microsoftAuthLifecycle.runLogin((signal) =>
+    performMicrosoftLogin(signal, onProgress),
+  );
 }
 
 export function cancelMicrosoftLogin(): boolean {
-  if (!microsoftLoginAbortController) return false;
-  microsoftLoginAbortController.abort();
-  return true;
+  return microsoftAuthLifecycle.cancelLogin();
 }
 
 /** Restaure silencieusement le dernier compte via le refresh token MSAL chiffré. */
@@ -446,12 +594,13 @@ async function performMicrosoftRestore(
   try {
     const { application } = await getMicrosoftClient();
     const accounts = await application.getAllAccounts();
-    if (accounts.length === 0) {
+    const account = selectUnambiguousMicrosoftAccount(accounts);
+    if (!account) {
       return { ok: false, error: "Aucune session Microsoft enregistrée." };
     }
     onProgress?.("Restauration sécurisée de la session Microsoft…");
     const result = await application.acquireTokenSilent({
-      account: accounts[0],
+      account,
       scopes: [...MICROSOFT_SCOPES],
     });
     return await useMicrosoftToken(result, signal, onProgress, shouldCommit);
@@ -464,20 +613,9 @@ export function restoreMicrosoftAccount(
   onProgress?: (stage: string) => void,
   shouldCommit: () => boolean = () => true,
 ): Promise<AuthResult> {
-  if (microsoftRestorePromise) return microsoftRestorePromise;
-  const controller = new AbortController();
-  microsoftRestoreAbortController = controller;
-  microsoftRestorePromise = performMicrosoftRestore(
-    controller.signal,
-    onProgress,
-    shouldCommit,
-  ).finally(() => {
-    microsoftRestorePromise = null;
-    if (microsoftRestoreAbortController === controller) {
-      microsoftRestoreAbortController = null;
-    }
-  });
-  return microsoftRestorePromise;
+  return microsoftAuthLifecycle.runRestore((signal) =>
+    performMicrosoftRestore(signal, onProgress, shouldCommit),
+  );
 }
 
 export function isMinecraftAuthorizationFresh(
@@ -486,8 +624,8 @@ export function isMinecraftAuthorizationFresh(
 ): boolean {
   return Boolean(
     authorization?.meta?.type === "msa" &&
-      authorization.meta.exp &&
-      authorization.meta.exp > now + 5 * 60 * 1_000,
+    authorization.meta.exp &&
+    authorization.meta.exp > now + 5 * 60 * 1_000,
   );
 }
 
@@ -499,7 +637,9 @@ export function ensureMicrosoftAuthorizationFresh(
   if (isMinecraftAuthorizationFresh(currentAuth)) {
     return Promise.resolve({
       ok: true,
-      account: toAccount(currentAuth as MinecraftAuthorization),
+      account: microsoftAuthorizationToAccount(
+        currentAuth as MinecraftAuthorization,
+      ),
     });
   }
   return restoreMicrosoftAccount(onProgress, shouldCommit);
@@ -523,28 +663,21 @@ export function clearAuth(): void {
 
 /** Supprime les comptes MSAL en mémoire puis le fichier chiffré sur disque. */
 export async function clearMicrosoftSession(): Promise<void> {
-  const pendingLogin = microsoftLoginPromise;
-  const pendingRestore = microsoftRestorePromise;
-  cancelMicrosoftLogin();
-  microsoftRestoreAbortController?.abort();
-  await Promise.allSettled(
-    [pendingLogin, pendingRestore].filter(
-      (pending): pending is Promise<AuthResult> => pending !== null,
-    ),
-  );
-  const cacheStore = await getMicrosoftCacheStore();
-  if (microsoftClientPromise) {
-    try {
-      const { application } = await microsoftClientPromise;
-      const accounts = await application.getAllAccounts();
-      for (const account of accounts) {
-        await application.getTokenCache().removeAccount(account);
+  await microsoftAuthLifecycle.runExclusiveClear(async () => {
+    const cacheStore = await getMicrosoftCacheStore();
+    if (microsoftClientPromise) {
+      try {
+        const { application } = await microsoftClientPromise;
+        const accounts = await application.getAllAccounts();
+        for (const account of accounts) {
+          await application.getTokenCache().removeAccount(account);
+        }
+      } catch {
+        // Le fichier est tout de même supprimé ci-dessous si MSAL ne démarre pas.
       }
-    } catch {
-      // Le fichier est tout de même supprimé ci-dessous si MSAL ne démarre pas.
     }
-  }
-  await cacheStore.clear();
-  currentAuth = null;
-  microsoftClientPromise = null;
+    await cacheStore.clear();
+    currentAuth = null;
+    microsoftClientPromise = null;
+  });
 }

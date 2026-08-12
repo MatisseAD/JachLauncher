@@ -21,7 +21,9 @@ describe("métadonnées de compte persistées", () => {
   });
 
   it("rejette les comptes incomplets ou aux types inconnus", () => {
-    expect(sanitizeStoredAccount({ type: "microsoft", username: "Steve" })).toBeNull();
+    expect(
+      sanitizeStoredAccount({ type: "microsoft", username: "Steve" }),
+    ).toBeNull();
     expect(
       sanitizeStoredAccount({
         type: "admin",

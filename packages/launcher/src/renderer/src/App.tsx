@@ -24,6 +24,7 @@ import {
   type InstanceStatus,
   type LoadManifestResult,
   type DesktopUpdateState,
+  shouldShowDesktopUpdate,
 } from "../../shared-types/ipc";
 
 function toPlayState(
@@ -563,7 +564,10 @@ export default function App() {
             try {
               await window.jach.openAdminCenter();
             } catch {
-              notify("error", "Impossible d'ouvrir le centre d'administration.");
+              notify(
+                "error",
+                "Impossible d'ouvrir le centre d'administration.",
+              );
             }
           }}
         >
@@ -571,12 +575,16 @@ export default function App() {
         </button>
       )}
       {microsoftLoginBusy && (
-        <div className="microsoft-auth-overlay" role="status" aria-live="polite">
+        <div
+          className="microsoft-auth-overlay"
+          role="status"
+          aria-live="polite"
+        >
           <div className="microsoft-auth-card">
             <strong>Connexion Microsoft en cours</strong>
             <span>
-              Termine la connexion dans ton navigateur. Cette fenêtre peut rester
-              ouverte.
+              Termine la connexion dans ton navigateur. Cette fenêtre peut
+              rester ouverte.
             </span>
             <button
               type="button"
@@ -587,7 +595,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {desktopUpdate.status !== "disabled" && (
+      {shouldShowDesktopUpdate(desktopUpdate) && (
         <div className={`desktop-update ${desktopUpdate.status}`}>
           <span className="desktop-update-dot" />
           <div>
@@ -596,26 +604,18 @@ export default function App() {
                 ? `Mise à jour ${desktopUpdate.version ?? ""} prête`
                 : desktopUpdate.status === "downloading"
                   ? `Mise à jour en cours · ${desktopUpdate.percent ?? 0}%`
-                  : desktopUpdate.status === "available"
-                    ? `Nouvelle version ${desktopUpdate.version ?? ""}`
-                    : desktopUpdate.status === "checking"
-                      ? "Recherche d'une mise à jour…"
-                      : desktopUpdate.status === "error"
-                        ? "Mise à jour temporairement indisponible"
-                        : `YourLauncher ${desktopUpdate.version ?? ""} est à jour`}
+                  : desktopUpdate.status === "error"
+                    ? `Mise à jour ${desktopUpdate.version ?? ""} interrompue`
+                    : `Nouvelle version ${desktopUpdate.version ?? ""}`}
             </strong>
-            <small>
-              {desktopUpdate.status === "ready"
-                ? "Elle s’installera automatiquement à la fermeture."
-                : desktopUpdate.status === "error"
-                  ? desktopUpdate.message
-                  : desktopUpdate.status === "idle"
-                    ? "Vérification automatique toutes les quatre heures."
-                    : "Téléchargement contrôlé en arrière-plan."}
-            </small>
+            {desktopUpdate.status === "ready" && (
+              <small>Installation automatique à la fermeture.</small>
+            )}
+            {desktopUpdate.status === "error" && (
+              <small>Le téléchargement n'a pas abouti.</small>
+            )}
           </div>
-          {(desktopUpdate.status === "idle" ||
-            desktopUpdate.status === "error") && (
+          {desktopUpdate.status === "error" && (
             <button
               type="button"
               disabled={updateActionBusy}
@@ -624,20 +624,17 @@ export default function App() {
                 try {
                   const result = await window.jach.checkForDesktopUpdate();
                   setDesktopUpdate(result.state);
-                  if (!result.ok && result.error) {
-                    notify("error", result.error);
-                  }
                 } catch {
                   notify(
                     "error",
-                    "Le service de mise à jour ne répond pas. Redémarre l'application.",
+                    "Le service de mise à jour ne répond pas. Réessaie plus tard.",
                   );
                 } finally {
                   setUpdateActionBusy(false);
                 }
               }}
             >
-              {updateActionBusy ? "Vérification…" : "Vérifier"}
+              {updateActionBusy ? "Nouvel essai…" : "Réessayer"}
             </button>
           )}
           {desktopUpdate.status === "ready" && (

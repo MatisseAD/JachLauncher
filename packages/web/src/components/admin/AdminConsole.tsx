@@ -9,10 +9,12 @@ import {
   useState,
 } from "react";
 import UiIcon, { type UiIconName } from "@/components/UiIcon";
+import AdminLivePanel from "./AdminLivePanel";
 import styles from "./AdminConsole.module.css";
 
 type UnknownRecord = Record<string, unknown>;
-type Tab = "users" | "launchers" | "playerBans" | "audit";
+type Tab = "live" | "users" | "launchers" | "playerBans" | "audit";
+type PaginatedTab = Exclude<Tab, "live">;
 
 const ADMIN_REASON_MIN_LENGTH = 3;
 const ADMIN_REASON_MAX_LENGTH = 500;
@@ -183,6 +185,7 @@ const TAB_COPY: Array<{
   label: string;
   icon: UiIconName;
 }> = [
+  { id: "live", label: "En direct", icon: "activity" },
   { id: "users", label: "Membres", icon: "users" },
   { id: "launchers", label: "Launchers", icon: "server" },
   { id: "playerBans", label: "Interdictions", icon: "shield" },
@@ -482,12 +485,12 @@ export default function AdminConsole({
   adminId?: string | null;
 }) {
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("users");
+  const [activeTab, setActiveTab] = useState<Tab>("live");
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState<Tab | null>(null);
+  const [loadingMore, setLoadingMore] = useState<PaginatedTab | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [pending, setPending] = useState<PendingOperation | null>(null);
@@ -602,6 +605,7 @@ export default function AdminConsole({
 
   const tabCounts = useMemo(
     () => ({
+      live: null,
       users: metrics.users.total,
       launchers: metrics.launchers.total,
       playerBans: metrics.playerBans.active,
@@ -712,11 +716,11 @@ export default function AdminConsole({
     return true;
   }, [fetchOverview, invalidatePaginationRequests, query]);
 
-  async function loadMore(tab: Tab) {
+  async function loadMore(tab: PaginatedTab) {
     if (!overview || loading || loadingMore !== null) return;
     const cursor = overview[tab].nextCursor;
     if (!cursor) return;
-    const cursorNames: Record<Tab, string> = {
+    const cursorNames: Record<PaginatedTab, string> = {
       users: "userCursor",
       launchers: "launcherCursor",
       playerBans: "banCursor",
@@ -1117,6 +1121,8 @@ export default function AdminConsole({
           />
         ) : null}
 
+        {activeTab === "live" ? <AdminLivePanel query={query} /> : null}
+
         {activeTab === "launchers" ? (
           <LaunchersPanel
             launchers={overview.launchers.items}
@@ -1151,7 +1157,7 @@ export default function AdminConsole({
           <AuditPanel entries={overview.audit.items} query={query} />
         ) : null}
 
-        {overview[activeTab].nextCursor ? (
+        {activeTab !== "live" && overview[activeTab].nextCursor ? (
           <div className={styles.loadMore}>
             <button
               className="btn secondary"

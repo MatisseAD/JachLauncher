@@ -17,20 +17,22 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      JACH_AZURE_CLIENT_ID: ${{ vars.JACH_AZURE_CLIENT_ID }}
+      # Nom canonique puis alias historique accepté à la demande du projet.
+      JACH_AZURE_CLIENT_ID: ${{ vars.JACH_AZURE_CLIENT_ID || vars.JACH_ID || 'cd01933b-3450-4beb-8c31-20fdb9c9ab43' }}
+      JACH_SIGNED_UPDATE_FEED_URL: ${{ vars.JACH_SIGNED_UPDATE_FEED_URL }}
+      JACH_WINDOWS_PUBLISHER_NAME: ${{ vars.JACH_WINDOWS_PUBLISHER_NAME }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: npm
 
-      - name: Validate release tag and update publishing token
+      - name: Validate release tag and signing configuration
         shell: pwsh
         env:
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: |
@@ -39,19 +41,43 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne $expectedTag) {
             throw "Release tag $env:GITHUB_REF_NAME does not match launcher version $version. Expected $expectedTag."
           }
-          if ([string]::IsNullOrWhiteSpace($env:BLOB_READ_WRITE_TOKEN)) {
-            throw "BLOB_READ_WRITE_TOKEN is required: the GitHub release must not be published without its automatic-update channel."
-          }
           if ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
             throw "WINDOWS_CSC_LINK and WINDOWS_CSC_KEY_PASSWORD are required: unsigned desktop releases are forbidden."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:JACH_WINDOWS_PUBLISHER_NAME)) {
+            throw "Repository variable JACH_WINDOWS_PUBLISHER_NAME must exactly match the Authenticode certificate simple name."
+          }
+
+      - name: Validate isolated signed update channel
+        shell: pwsh
+        env:
+          SIGNED_BLOB_READ_WRITE_TOKEN: ${{ secrets.SIGNED_BLOB_READ_WRITE_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNED_BLOB_READ_WRITE_TOKEN)) {
+            throw "SIGNED_BLOB_READ_WRITE_TOKEN is required for the signed update store."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:JACH_SIGNED_UPDATE_FEED_URL)) {
+            throw "JACH_SIGNED_UPDATE_FEED_URL is required."
+          }
+          $signed = [Uri]$env:JACH_SIGNED_UPDATE_FEED_URL
+          $legacy = [Uri]"https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows"
+          if ($signed.Scheme -ne "https" -or $signed.Host -eq $legacy.Host) {
+            throw "The signed update feed must use HTTPS on a Blob store distinct from the legacy channel."
+          }
+
+      - name: Validate one-time legacy bootstrap token
+        if: ${{ github.ref_name == format('v{0}', vars.JACH_LEGACY_BOOTSTRAP_VERSION) }}
+        shell: pwsh
+        env:
+          LEGACY_BLOB_READ_WRITE_TOKEN: ${{ secrets.LEGACY_BLOB_READ_WRITE_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LEGACY_BLOB_READ_WRITE_TOKEN)) {
+            throw "LEGACY_BLOB_READ_WRITE_TOKEN is required only for the configured bootstrap release."
           }
 
       - name: Validate Microsoft authentication configuration
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:JACH_AZURE_CLIENT_ID)) {
-            throw "Repository variable JACH_AZURE_CLIENT_ID is required to package Microsoft authentication. Configure it under Settings > Secrets and variables > Actions > Variables."
-          }
           if ($env:JACH_AZURE_CLIENT_ID -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
             throw "Repository variable JACH_AZURE_CLIENT_ID must be an Azure application ID in GUID format."
           }
@@ -69,8 +95,12 @@ jobs:
       - name: Test desktop security and update contracts
         run: npx vitest run packages/launcher/src/main
 
-      - name: Build the branded Windows installer
-        run: npm run package:win --workspace=@jach/launcher
+      - name: Build desktop bundles
+        run: npm run build --workspace=@jach/launcher
+
+      - name: Package the signed Windows installer
+        run: npx electron-builder --win --publish never
+        working-directory: packages/launcher
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
@@ -88,17 +118,32 @@ jobs:
           if ($mainBundle.Contains("oauth20_desktop.srf")) {
             throw "The packaged main process still contains the obsolete embedded-browser Microsoft redirect."
           }
-          if (-not $mainBundle.Contains("https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows")) {
-            throw "The packaged main process does not contain the stable automatic-update feed."
+          $signedFeed = $env:JACH_SIGNED_UPDATE_FEED_URL.TrimEnd('/')
+          if (-not $mainBundle.Contains($signedFeed)) {
+            throw "The packaged main process does not contain the isolated signed update feed."
           }
           $version = (Get-Content "packages/launcher/package.json" | ConvertFrom-Json).version
           $installer = "packages/launcher/release/YourLauncher-Setup-$version.exe"
           if (-not (Test-Path $installer)) { throw "Missing installer: $installer" }
           if (-not (Test-Path "$installer.blockmap")) { throw "Missing differential blockmap: $installer.blockmap" }
           if (-not (Test-Path "packages/launcher/release/latest.yml")) { throw "Missing latest.yml" }
+          $updateConfig = Get-Content "packages/launcher/release/win-unpacked/resources/app-update.yml" -Raw
+          $publisherScalar = $updateConfig -match '(?m)^publisherName:[ \t]+\S'
+          $publisherList = $updateConfig -match '(?m)^publisherName:[ \t]*\r?$\n[ \t]*-[ \t]+\S'
+          if (-not ($publisherScalar -or $publisherList)) {
+            throw "app-update.yml does not pin the Authenticode publisher name."
+          }
           $signature = Get-AuthenticodeSignature -LiteralPath $installer
           if ($signature.Status -ne "Valid") {
             throw "The Windows installer is not Authenticode-signed with a valid certificate (status: $($signature.Status))."
+          }
+          $publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+          if ([string]::IsNullOrWhiteSpace($publisher) -or $publisher -cne $env:JACH_WINDOWS_PUBLISHER_NAME) {
+            throw "The actual Authenticode publisher does not exactly match JACH_WINDOWS_PUBLISHER_NAME."
+          }
+          $publisherPattern = '(?m)^publisherName:\s*[''\"]?' + [regex]::Escape($env:JACH_WINDOWS_PUBLISHER_NAME) + '[''\"]?\s*$'
+          if ($updateConfig -notmatch $publisherPattern) {
+            throw "app-update.yml does not match the actual Authenticode publisher."
           }
 
       - name: Generate SHA-256 checksum
@@ -111,10 +156,17 @@ jobs:
       - name: Publish the public automatic-update channel
         run: node scripts/publish-desktop-update.mjs
         env:
-          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.SIGNED_BLOB_READ_WRITE_TOKEN }}
+
+      - name: Bootstrap legacy clients once
+        if: ${{ github.ref_name == format('v{0}', vars.JACH_LEGACY_BOOTSTRAP_VERSION) }}
+        run: node scripts/publish-desktop-update.mjs --bootstrap-legacy
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.LEGACY_BLOB_READ_WRITE_TOKEN }}
+          JACH_LEGACY_BOOTSTRAP_VERSION: ${{ vars.JACH_LEGACY_BOOTSTRAP_VERSION }}
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           name: YourLauncher ${{ github.ref_name }}
           generate_release_notes: true

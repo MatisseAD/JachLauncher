@@ -43,7 +43,8 @@ export function isAllowedAdminMutationOrigin(request: Request): boolean {
 export interface AuditInput {
   actorId: string | null;
   action: string;
-  targetType: "user" | "launcher" | "player_ban" | "system";
+  targetType:
+    "user" | "launcher" | "player_ban" | "launcher_session" | "system";
   targetId?: string | null;
   metadata?: Prisma.InputJsonValue;
 }

@@ -6,7 +6,8 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
-import { put } from "@vercel/blob";
+import { list, put } from "@vercel/blob";
+import { load as parseYaml } from "js-yaml";
 
 const root = path.resolve(import.meta.dirname, "..");
 const releaseDir = path.resolve(root, "packages/launcher/release");
@@ -14,8 +15,10 @@ const envFileArg = process.argv.indexOf("--env-file");
 const validateOnly = process.argv.includes("--validate-only");
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const UPDATE_ROOT =
+const LEGACY_UPDATE_ROOT =
   "https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows";
+const UPDATE_PATH_PREFIX = "releases/windows";
+const bootstrapLegacy = process.argv.includes("--bootstrap-legacy");
 const execFileAsync = promisify(execFile);
 
 if (envFileArg >= 0 && process.argv[envFileArg + 1]) {
@@ -34,6 +37,84 @@ if (envFileArg >= 0 && process.argv[envFileArg + 1]) {
     process.env[match[1]] = value;
   }
 }
+
+function normalizeUpdateRoot(input, label) {
+  if (!input?.trim()) {
+    throw new Error(`${label} est absente.`);
+  }
+  const url = new URL(input.trim());
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      `${label} doit être une URL HTTPS publique sans paramètres.`,
+    );
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+function parseBlobStoreId(token, label) {
+  const parts = token.split("_");
+  const storeId = parts[3]?.trim();
+  if (
+    parts[0] !== "vercel" ||
+    parts[1] !== "blob" ||
+    parts[2] !== "rw" ||
+    !storeId ||
+    !/^[a-z0-9-]+$/i.test(storeId) ||
+    parts.length < 5
+  ) {
+    throw new Error(`${label} n'est pas un jeton Vercel Blob RW valide.`);
+  }
+  return storeId;
+}
+
+async function preflightBlobStore(token, updateRoot, label) {
+  const storeId = parseBlobStoreId(token, label);
+  const expectedRoot = `https://${storeId}.public.blob.vercel-storage.com/${UPDATE_PATH_PREFIX}`;
+  if (updateRoot !== expectedRoot) {
+    throw new Error(
+      `${label} cible le store ${storeId}, mais le client lit ${updateRoot}.`,
+    );
+  }
+
+  try {
+    await list({ token, prefix: `${UPDATE_PATH_PREFIX}/`, limit: 1 });
+  } catch {
+    throw new Error(
+      `${label} ne permet pas d'accéder au Blob store configuré. Aucune publication n'a été tentée.`,
+    );
+  }
+
+  return `https://${storeId}.public.blob.vercel-storage.com`;
+}
+
+function expectedBlobUrl(blobOrigin, pathname) {
+  return new URL(`/${pathname}`, `${blobOrigin}/`).toString();
+}
+
+const configuredSignedRoot = process.env.JACH_SIGNED_UPDATE_FEED_URL?.trim();
+if (!configuredSignedRoot) {
+  throw new Error(
+    "JACH_SIGNED_UPDATE_FEED_URL est requise, y compris pour une validation locale ou un bootstrap historique.",
+  );
+}
+const SIGNED_UPDATE_ROOT = normalizeUpdateRoot(
+  configuredSignedRoot,
+  "JACH_SIGNED_UPDATE_FEED_URL",
+);
+const signedUrl = new URL(SIGNED_UPDATE_ROOT);
+const legacyUrl = new URL(LEGACY_UPDATE_ROOT);
+if (signedUrl.hostname === legacyUrl.hostname) {
+  throw new Error(
+    "JACH_SIGNED_UPDATE_FEED_URL doit cibler un nouveau Blob store distinct du canal historique.",
+  );
+}
+const UPDATE_ROOT = bootstrapLegacy ? LEGACY_UPDATE_ROOT : SIGNED_UPDATE_ROOT;
 
 function yamlScalar(text, key) {
   const match = text.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, "m"));
@@ -91,9 +172,12 @@ async function verifyAuthenticodeSignature(installerPath) {
     'if ($signature.Status -ne "Valid") {',
     '  throw "Signature Authenticode invalide : $($signature.Status)"',
     "}",
+    "$publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)",
+    'if ([string]::IsNullOrWhiteSpace($publisher)) { throw "Éditeur Authenticode absent" }',
+    "Write-Output $publisher",
   ].join("\n");
   try {
-    await execFileAsync(
+    const { stdout } = await execFileAsync(
       "powershell.exe",
       ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
       {
@@ -101,6 +185,11 @@ async function verifyAuthenticodeSignature(installerPath) {
         windowsHide: true,
       },
     );
+    const publisher = stdout.trim();
+    if (!publisher || publisher.includes("\n") || publisher.includes("\r")) {
+      throw new Error("Éditeur Authenticode ambigu.");
+    }
+    return publisher;
   } catch {
     throw new Error(
       "Publication refusée : l’installateur Windows ne possède pas une signature Authenticode valide.",
@@ -112,8 +201,27 @@ const files = await readdir(releaseDir);
 const launcherPackage = JSON.parse(
   await readFile(path.join(root, "packages/launcher/package.json"), "utf8"),
 );
+if (
+  bootstrapLegacy &&
+  process.env.JACH_LEGACY_BOOTSTRAP_VERSION?.trim() !== launcherPackage.version
+) {
+  throw new Error(
+    "Le bootstrap du canal historique est limité à JACH_LEGACY_BOOTSTRAP_VERSION.",
+  );
+}
 if (!SEMVER_PATTERN.test(launcherPackage.version)) {
   throw new Error(`Version Electron non SemVer : ${launcherPackage.version}`);
+}
+if (!validateOnly) {
+  const releaseTag = (
+    process.env.GITHUB_REF_NAME ?? process.env.JACH_RELEASE_TAG
+  )?.trim();
+  const expectedTag = `v${launcherPackage.version}`;
+  if (releaseTag !== expectedTag) {
+    throw new Error(
+      `Publication refusée : le tag doit être exactement ${expectedTag} (GITHUB_REF_NAME ou JACH_RELEASE_TAG).`,
+    );
+  }
 }
 
 const installerName = `YourLauncher-Setup-${launcherPackage.version}.exe`;
@@ -129,6 +237,17 @@ for (const required of [installerName, blockmapName, "latest.yml"]) {
 const installerBytes = await readFile(path.join(releaseDir, installerName));
 const blockmapBytes = await readFile(path.join(releaseDir, blockmapName));
 const metadataBytes = await readFile(path.join(releaseDir, "latest.yml"));
+const appUpdatePath = path.join(
+  releaseDir,
+  "win-unpacked",
+  "resources",
+  "app-update.yml",
+);
+const appUpdateText = await readFile(appUpdatePath, "utf8").catch(() => {
+  throw new Error(
+    "win-unpacked/resources/app-update.yml manque. Recrée le package Windows avant validation.",
+  );
+});
 const metadataText = metadataBytes.toString("utf8");
 if (!installerBytes.length || !blockmapBytes.length || !metadataBytes.length) {
   throw new Error("Un artefact de mise à jour est vide.");
@@ -176,20 +295,63 @@ if (!listedSizes.includes(installerBytes.length)) {
   );
 }
 
+const appUpdateConfig = parseYaml(appUpdateText);
+if (!appUpdateConfig || typeof appUpdateConfig !== "object") {
+  throw new Error("app-update.yml est invalide.");
+}
+const appUpdatePublishers = (
+  Array.isArray(appUpdateConfig.publisherName)
+    ? appUpdateConfig.publisherName
+    : [appUpdateConfig.publisherName]
+)
+  .filter((publisher) => typeof publisher === "string")
+  .map((publisher) => publisher.trim())
+  .filter(Boolean);
+if (appUpdatePublishers.length === 0) {
+  throw new Error(
+    "app-update.yml doit épingler au moins un publisherName Authenticode.",
+  );
+}
+if (
+  appUpdateConfig.provider !== "generic" ||
+  appUpdateConfig.channel !== "latest" ||
+  normalizeUpdateRoot(appUpdateConfig.url, "L'URL d'app-update.yml") !==
+    SIGNED_UPDATE_ROOT
+) {
+  throw new Error(
+    `app-update.yml doit cibler exactement le canal signé ${SIGNED_UPDATE_ROOT}.`,
+  );
+}
+
 if (validateOnly) {
   console.log(
-    `Artefacts ${launcherPackage.version} valides : ${installerName}, ${blockmapName}, latest.yml.`,
+    `Structure des artefacts ${launcherPackage.version} valide. La signature Authenticode et l'accès au Blob store ne sont contrôlés que lors d'une publication réelle.`,
   );
   process.exit(0);
 }
 
-await verifyAuthenticodeSignature(path.join(releaseDir, installerName));
+const authenticodePublisher = await verifyAuthenticodeSignature(
+  path.join(releaseDir, installerName),
+);
+if (!appUpdatePublishers.includes(authenticodePublisher)) {
+  throw new Error(
+    `L'éditeur Authenticode « ${authenticodePublisher} » ne correspond pas au publisherName épinglé dans app-update.yml.`,
+  );
+}
 
-if (!process.env.BLOB_READ_WRITE_TOKEN) {
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+if (!blobToken) {
   throw new Error(
     "BLOB_READ_WRITE_TOKEN est requis pour publier une mise à jour.",
   );
 }
+const blobOrigin = await preflightBlobStore(
+  blobToken,
+  UPDATE_ROOT,
+  bootstrapLegacy
+    ? "LEGACY_BLOB_READ_WRITE_TOKEN"
+    : "SIGNED_BLOB_READ_WRITE_TOKEN",
+);
 
 const publishedMetadataResponse = await fetch(
   `${UPDATE_ROOT}/latest.yml?preflight=${Date.now()}`,
@@ -221,15 +383,24 @@ const publish = async (
   cacheControlMaxAge,
   multipart = false,
   allowOverwrite = false,
-) =>
-  put(pathname, bytes, {
+) => {
+  const result = await put(pathname, bytes, {
     access: "public",
     addRandomSuffix: false,
     allowOverwrite,
     contentType,
     cacheControlMaxAge,
     multipart,
+    token: blobToken,
   });
+  const expectedUrl = expectedBlobUrl(blobOrigin, pathname);
+  if (new URL(result.url).toString() !== expectedUrl) {
+    throw new Error(
+      `Vercel Blob a retourné une URL inattendue pour ${pathname}. La publication est interrompue avant tout pointeur mutable.`,
+    );
+  }
+  return result;
+};
 
 async function immutableArtifactAlreadyPublished(url, expectedBytes) {
   const response = await fetch(`${url}?preflight=${Date.now()}`, {
@@ -253,6 +424,48 @@ async function immutableArtifactAlreadyPublished(url, expectedBytes) {
   }
   console.log(`Artefact immuable identique réutilisé : ${url}`);
   return true;
+}
+
+async function requirePublicBytesMatch(url, expectedBytes, label) {
+  const response = await fetch(`${url}?bootstrap-check=${Date.now()}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(
+      `${label} doit déjà exister sur le canal signé (HTTP ${response.status}) avant le bootstrap historique.`,
+    );
+  }
+  const remoteBytes = Buffer.from(await response.arrayBuffer());
+  if (
+    remoteBytes.length !== expectedBytes.length ||
+    sha512Base64(remoteBytes) !== sha512Base64(expectedBytes)
+  ) {
+    throw new Error(
+      `${label} diffère entre le build local et le canal signé. Le canal historique reste inchangé.`,
+    );
+  }
+}
+
+if (bootstrapLegacy) {
+  // Le vieux parc ne reçoit le binaire de transition qu'après preuve que ce
+  // même binaire est déjà disponible sur son nouveau canal signé définitif.
+  await Promise.all([
+    requirePublicBytesMatch(
+      `${SIGNED_UPDATE_ROOT}/latest.yml`,
+      metadataBytes,
+      "latest.yml",
+    ),
+    requirePublicBytesMatch(
+      `${SIGNED_UPDATE_ROOT}/${installerName}`,
+      installerBytes,
+      installerName,
+    ),
+    requirePublicBytesMatch(
+      `${SIGNED_UPDATE_ROOT}/${blockmapName}`,
+      blockmapBytes,
+      blockmapName,
+    ),
+  ]);
 }
 
 async function verifyPublicFile(url, expectedSize) {

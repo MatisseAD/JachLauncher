@@ -14,18 +14,20 @@ de bascule SQLite ni de `db push` pendant le build.
 
 ## 2. Variables d’environnement
 
-| Variable                            | Requise    | Description                                                     |
-| ----------------------------------- | ---------- | --------------------------------------------------------------- |
-| `DATABASE_URL`                      | oui        | URL PostgreSQL poolée utilisée par l’application                |
-| `DIRECT_URL`                        | conseillée | URL PostgreSQL directe/session utilisée par `migrate deploy`    |
-| `AUTH_SECRET`                       | oui        | secret aléatoire d’au moins 32 caractères                       |
-| `NEXT_PUBLIC_APP_URL`               | oui        | origine HTTPS publique, par exemple `https://app.example.com`   |
-| `MANIFEST_SIGNING_PRIVATE_KEY`      | conseillé  | clé privée Ed25519 en base64 (`npm run key:generate`)           |
-| `BLOB_READ_WRITE_TOKEN`             | conseillé  | injecté par Vercel Blob ; sinon les uploads utilisent le disque |
-| `DEMO_PASSWORD`                     | seed seul  | mot de passe de démo d'au moins 12 caractères                   |
-| `ALLOW_DEMO_SEED`                   | seed prod  | doit valoir `true` pour autoriser explicitement le seed en prod |
-| `NEXT_PUBLIC_ADSENSE_CLIENT`        | non        | identifiant `ca-pub-…` pour charger AdSense                     |
-| `NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL` | non        | URL HTTPS de l’installateur desktop affichée dans le dashboard  |
+| Variable                            | Requise    | Description                                                       |
+| ----------------------------------- | ---------- | ----------------------------------------------------------------- |
+| `DATABASE_URL`                      | oui        | URL PostgreSQL poolée utilisée par l’application                  |
+| `DIRECT_URL`                        | conseillée | URL PostgreSQL directe/session utilisée par `migrate deploy`      |
+| `AUTH_SECRET`                       | oui        | secret aléatoire d’au moins 32 caractères                         |
+| `NEXT_PUBLIC_APP_URL`               | oui        | origine HTTPS publique, par exemple `https://app.example.com`     |
+| `MANIFEST_SIGNING_PRIVATE_KEY`      | conseillé  | clé privée Ed25519 en base64 (`npm run key:generate`)             |
+| `BLOB_READ_WRITE_TOKEN`             | conseillé  | injecté par Vercel Blob ; sinon les uploads utilisent le disque   |
+| `DEMO_PASSWORD`                     | seed seul  | mot de passe de démo d'au moins 12 caractères                     |
+| `ALLOW_DEMO_SEED`                   | seed prod  | doit valoir `true` pour autoriser explicitement le seed en prod   |
+| `NEXT_PUBLIC_ADSENSE_CLIENT`        | non        | identifiant `ca-pub-…` pour charger AdSense                       |
+| `NEXT_PUBLIC_LAUNCHER_DOWNLOAD_URL` | non        | URL HTTPS de l’installateur desktop affichée dans le dashboard    |
+| `CURSEFORGE_API_KEY`                | non        | active la recherche CurseForge et son proxy de téléchargement     |
+| `CONTENT_CATALOG_SIGNING_SECRET`    | conseillé  | HMAC stable (32+ caractères) pour les URL CurseForge du manifeste |
 
 Génère le secret avec un gestionnaire de secrets ou :
 
@@ -80,6 +82,12 @@ n’est supprimé ou marqué artificiellement comme migré.
 
 ## 4. Base de données
 
+Les migrations incluent la console administrateur et les sessions de présence
+du client desktop. Elles doivent être appliquées avant de diffuser la version
+3.0.1 du launcher ; sinon la liste des clients ouverts/en jeu restera
+indisponible. Ces présences expirent automatiquement après 75 secondes sans
+heartbeat.
+
 Avant le premier trafic, vérifie localement l’état :
 
 ```bash
@@ -132,6 +140,10 @@ Vérifie ensuite :
 - un brouillon n’est visible publiquement ni par l’API ni par l’aperçu ;
 - la création de compte, la connexion, l’upload et la publication fonctionnent ;
 - `NEXT_PUBLIC_APP_URL` correspond exactement au domaine HTTPS final.
+- la console `/admin` voit un launcher 3.0.1 ouvert, puis son état `En jeu`, et
+  les commandes d'arrêt/fermeture sont exécutées par le client officiel.
+- la recherche Modrinth fonctionne ; si `CURSEFORGE_API_KEY` est configurée,
+  vérifie également un téléchargement CurseForge autorisé par son auteur.
 
 ## 7. Déployer
 

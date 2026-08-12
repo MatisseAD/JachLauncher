@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import type { ChildProcess } from "node:child_process";
+import { app, autoUpdater, BrowserWindow, ipcMain, shell } from "electron";
 import type { LauncherManifest } from "@jach/shared";
 import type {
   LaunchProgress,
@@ -8,6 +9,7 @@ import type {
   LauncherState,
   LoadManifestResult,
 } from "../shared-types/ipc";
+import { openAdminWindow } from "./admin-window";
 import {
   cancelMicrosoftLogin,
   clearAuth,
@@ -21,13 +23,21 @@ import {
 } from "./auth";
 import { buildReport, classifyError } from "./diagnostics";
 import { getInstanceStatus } from "./instance";
-import { ADMIN_CENTER_URL, assertFixedAdminCenterUrl } from "./external-links";
 import {
   checkLauncherAccess,
   LauncherAccessPolicyError,
 } from "./launcher-access";
 import { launchGame } from "./launch";
 import { authorizationMatchesAccount } from "./launch-auth";
+import {
+  isChildProcessRunning,
+  terminateGameProcess,
+} from "./game-process-control";
+import {
+  LivePresenceController,
+  type LivePresenceCommand,
+} from "./live-presence";
+import { shouldHideMainWindowOnClose } from "./main-window-close-policy";
 import { fetchManifest } from "./manifest";
 import { repairInstance } from "./repair";
 import {
@@ -56,6 +66,42 @@ let busyOperation: "launch" | "repair" | null = null;
 const logBuffer: string[] = [];
 let autoUpdates: AutoUpdateController | null = null;
 let authRevision = 0;
+let currentGameProcess: ChildProcess | null = null;
+let livePresence: LivePresenceController | null = null;
+let appQuitting = false;
+
+async function syncLivePresence(): Promise<boolean> {
+  if (!livePresence) return false;
+  if (!currentManifest || !currentManifestBaseUrl || !state.account) {
+    await livePresence.disconnect("launcher_changed");
+    return false;
+  }
+  return livePresence.connect({
+    baseUrl: currentManifestBaseUrl,
+    slug: currentManifest.id,
+    account: state.account,
+  });
+}
+
+async function stopCurrentGame(command: LivePresenceCommand): Promise<void> {
+  const child = currentGameProcess;
+  if (!isChildProcessRunning(child)) {
+    currentGameProcess = null;
+    livePresence?.setGameRunning(false);
+    return;
+  }
+
+  emitLog(
+    `[admin] ${
+      command.action === "close_client"
+        ? "Fermeture distante"
+        : "Arrêt distant du jeu"
+    } : ${command.reason}`,
+  );
+  await terminateGameProcess(child);
+  if (currentGameProcess === child) currentGameProcess = null;
+  livePresence?.setGameRunning(false);
+}
 
 function createWindow(): void {
   const iconPath = path.join(__dirname, "../../build/icon.png");
@@ -78,6 +124,17 @@ function createWindow(): void {
   });
 
   mainWindow.once("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("close", (event) => {
+    if (
+      shouldHideMainWindowOnClose({
+        gameRunning: isChildProcessRunning(currentGameProcess),
+        appQuitting,
+      })
+    ) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
   mainWindow.once("closed", () => {
     mainWindow = null;
   });
@@ -146,6 +203,7 @@ async function activateManifest(
     ...state.launchers.filter((launcher) => launcher.id !== id),
   ].slice(0, 50);
   await saveState(state);
+  void syncLivePresence();
   return {
     ok: true,
     manifest,
@@ -243,6 +301,7 @@ function registerIpc(): void {
       state.slug = null;
       currentManifest = null;
       currentManifestBaseUrl = null;
+      await livePresence?.disconnect("launcher_changed");
     }
     await saveState(state);
     return state.launchers;
@@ -250,7 +309,9 @@ function registerIpc(): void {
 
   ipcMain.handle("auth:microsoft", async () => {
     const revision = ++authRevision;
-    emitLog("[auth] Ouverture de la connexion Microsoft dans le navigateur système.");
+    emitLog(
+      "[auth] Ouverture de la connexion Microsoft dans le navigateur système.",
+    );
     const result = await loginMicrosoft((stage) =>
       emitLog(`[auth] Microsoft : ${stage}`),
     );
@@ -261,6 +322,7 @@ function registerIpc(): void {
       state.account = result.account;
       await saveState(state);
       emitAccountState();
+      void syncLivePresence();
       emitLog(`[auth] Compte Microsoft connecté : ${result.account.username}`);
     } else {
       emitLog(`[auth] ${result.error ?? "Connexion Microsoft refusée."}`);
@@ -284,11 +346,13 @@ function registerIpc(): void {
       state.account = result.account;
       await saveState(state);
       emitAccountState();
+      void syncLivePresence();
     }
     return result;
   });
   ipcMain.handle("auth:logout", async () => {
     ++authRevision;
+    await livePresence?.disconnect("account_changed");
     await clearMicrosoftSession();
     clearAuth();
     state.account = null;
@@ -296,10 +360,8 @@ function registerIpc(): void {
     emitAccountState();
   });
 
-  // URL volontairement fixe : le renderer ne peut choisir ni origine ni chemin.
-  ipcMain.handle("admin:openCenter", () =>
-    shell.openExternal(assertFixedAdminCenterUrl(ADMIN_CENTER_URL)),
-  );
+  // Aucune URL n'est fournie par le renderer et aucun bridge Node n'est exposé.
+  ipcMain.handle("admin:openCenter", () => openAdminWindow());
 
   ipcMain.handle("game:status", async () =>
     currentManifest && currentManifestBaseUrl
@@ -312,6 +374,17 @@ function registerIpc(): void {
     }
     const manifest = currentManifest;
     const manifestBaseUrl = currentManifestBaseUrl;
+    if (isChildProcessRunning(currentGameProcess)) {
+      return {
+        ok: false,
+        error: "Minecraft est déjà en cours d'exécution.",
+        diagnostic: {
+          title: "Jeu déjà lancé",
+          message:
+            "Ferme la session Minecraft actuelle avant d'en démarrer une autre.",
+        },
+      };
+    }
     if (busyOperation) {
       return { ok: false, error: "Une opération est déjà en cours." };
     }
@@ -378,17 +451,47 @@ function registerIpc(): void {
         if (!access.allowed) throw new LauncherAccessPolicyError(access);
         assertAuthorizationMatchesAccount();
       };
+      void syncLivePresence().then((connected) => {
+        if (!connected) {
+          emitLog(
+            "[presence] Démarrage sans présence live; reconnexion automatique en arrière-plan.",
+          );
+        }
+      });
       await verifyAccess("Vérification de ton autorisation…");
-      await launchGame(
+      const child = await launchGame(
         manifest,
         manifestBaseUrl,
         state.settings,
         emitProgress,
         emitLog,
         () => verifyAccess("Contrôle final de ton autorisation…"),
+        (spawnedChild) => {
+          currentGameProcess = isChildProcessRunning(spawnedChild)
+            ? spawnedChild
+            : null;
+          livePresence?.setGameRunning(isChildProcessRunning(spawnedChild));
+          spawnedChild.once("close", () => {
+            if (currentGameProcess === spawnedChild) currentGameProcess = null;
+            livePresence?.setGameRunning(false);
+            if (state.settings.closeOnLaunch && mainWindow) {
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          });
+        },
       );
+      // `onSpawn` ci-dessus enregistre le processus avant les dernières
+      // écritures asynchrones de launchGame. Cette affectation ne sert que de
+      // garde si une implémentation de lancement retourne un processus déjà clos.
+      if (!isChildProcessRunning(child) && currentGameProcess === child) {
+        currentGameProcess = null;
+        livePresence?.setGameRunning(false);
+      }
       if (state.settings.closeOnLaunch) {
-        setTimeout(() => mainWindow?.close(), 250);
+        // Le processus principal reste actif pour suivre Minecraft et recevoir
+        // les commandes administrateur; seule la fenêtre est masquée.
+        setTimeout(() => mainWindow?.hide(), 250);
       } else if (state.settings.minimizeOnLaunch) {
         setTimeout(() => mainWindow?.minimize(), 250);
       }
@@ -500,7 +603,7 @@ function registerIpc(): void {
       }),
   );
   ipcMain.handle("update:install", () => {
-    if (busyOperation) {
+    if (busyOperation || isChildProcessRunning(currentGameProcess)) {
       const state = autoUpdates?.getState() ?? {
         status: "disabled" as const,
         version: app.getVersion(),
@@ -522,7 +625,15 @@ function registerIpc(): void {
   });
 
   ipcMain.on("win:minimize", () => mainWindow?.minimize());
-  ipcMain.on("win:close", () => mainWindow?.close());
+  ipcMain.on("win:close", () => {
+    if (isChildProcessRunning(currentGameProcess)) {
+      // Garde le processus principal et son heartbeat en arrière-plan pendant
+      // Minecraft. Une seconde ouverture réaffiche cette même instance.
+      mainWindow?.hide();
+    } else {
+      mainWindow?.close();
+    }
+  });
   ipcMain.on("win:toggleFullscreen", () => {
     if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
   });
@@ -533,6 +644,11 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
+  // electron-updater ferme les fenêtres avant d'émettre `before-quit` sur app.
+  // Ce signal doit donc lever la garde de masquage Alt+F4 immédiatement.
+  autoUpdater.once("before-quit-for-update", () => {
+    appQuitting = true;
+  });
   app.on("second-instance", () => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -541,43 +657,52 @@ if (!hasSingleInstanceLock) {
   });
 
   void app.whenReady().then(async () => {
-  state = await loadState();
-  const shouldRestoreMicrosoft = state.account?.type === "microsoft";
-  if (state.account?.type === "offline") {
-    rehydrateOffline(state.account);
-  } else {
-    // Les métadonnées persistées ne sont jamais exposées comme une session
-    // active avant validation silencieuse du cache MSAL chiffré.
-    state.account = null;
-  }
-  registerIpc();
-  createWindow();
-  autoUpdates = setupAutoUpdates(() => mainWindow);
-  if (shouldRestoreMicrosoft) {
-    const revision = authRevision;
-    void restoreMicrosoftAccount(
-      (stage) => emitLog(`[auth] Microsoft : ${stage}`),
-      () => revision === authRevision,
-    ).then(async (result) => {
-      if (revision !== authRevision) return;
-      if (result.ok && result.account) {
-        state.account = result.account;
-        emitLog(
-          `[auth] Session Microsoft restaurée : ${result.account.username}`,
-        );
-      } else {
-        state.account = null;
-        emitLog(
-          `[auth] Session Microsoft non restaurée : ${result.error ?? "reconnexion requise"}`,
-        );
-      }
-      await saveState(state);
-      emitAccountState();
+    state = await loadState();
+    const shouldRestoreMicrosoft = state.account?.type === "microsoft";
+    if (state.account?.type === "offline") {
+      rehydrateOffline(state.account);
+    } else {
+      // Les métadonnées persistées ne sont jamais exposées comme une session
+      // active avant validation silencieuse du cache MSAL chiffré.
+      state.account = null;
+    }
+    livePresence = new LivePresenceController(app.getVersion(), {
+      executeCommand: stopCurrentGame,
+      closeClient: (reason) => {
+        emitLog(`[admin] Fermeture du client : ${reason}`);
+        setTimeout(() => app.quit(), 0);
+      },
+      report: (message) => emitLog(`[presence] ${message}`),
     });
-  }
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+    registerIpc();
+    createWindow();
+    autoUpdates = setupAutoUpdates(() => mainWindow);
+    if (shouldRestoreMicrosoft) {
+      const revision = authRevision;
+      void restoreMicrosoftAccount(
+        (stage) => emitLog(`[auth] Microsoft : ${stage}`),
+        () => revision === authRevision,
+      ).then(async (result) => {
+        if (revision !== authRevision) return;
+        if (result.ok && result.account) {
+          state.account = result.account;
+          emitLog(
+            `[auth] Session Microsoft restaurée : ${result.account.username}`,
+          );
+        } else {
+          state.account = null;
+          emitLog(
+            `[auth] Session Microsoft non restaurée : ${result.error ?? "reconnexion requise"}`,
+          );
+        }
+        await saveState(state);
+        emitAccountState();
+        void syncLivePresence();
+      });
+    }
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
   });
 }
 
@@ -585,8 +710,22 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
+let presenceShutdownStarted = false;
+app.on("before-quit", (event) => {
+  appQuitting = true;
   cancelMicrosoftLogin();
   autoUpdates?.dispose();
   autoUpdates = null;
+  if (livePresence && !presenceShutdownStarted) {
+    event.preventDefault();
+    presenceShutdownStarted = true;
+    const controller = livePresence;
+    livePresence = null;
+    // La fermeture distante est best-effort : la TTL serveur clôture la ligne
+    // si le réseau est indisponible, sans bloquer l'utilisateur dix secondes.
+    void Promise.race([
+      controller.shutdown(),
+      new Promise<void>((resolve) => setTimeout(resolve, 1_500)),
+    ]).finally(() => app.quit());
+  }
 });

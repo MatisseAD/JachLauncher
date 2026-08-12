@@ -67,7 +67,15 @@ export function setupAutoUpdates(
   }
 
   const updater = getAutoUpdater();
-  const feedUrl = validateUpdateFeedUrl(WINDOWS_UPDATE_FEED_URL);
+  let feedUrl: string;
+  try {
+    feedUrl = validateUpdateFeedUrl(WINDOWS_UPDATE_FEED_URL);
+  } catch (error) {
+    log.error("[updater] Canal signé absent ou invalide", error);
+    return disabledController(
+      "Le canal signé de mise à jour n'est pas configuré dans cette version.",
+    );
+  }
   updater.logger = log;
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = true;
@@ -88,6 +96,7 @@ export function setupAutoUpdates(
   };
   let disposed = false;
   let checkPromise: Promise<DesktopUpdateActionResult> | null = null;
+  let requiredVersion: string | null = null;
 
   const send = (next: DesktopUpdateState) => {
     state = next;
@@ -105,7 +114,13 @@ export function setupAutoUpdates(
   const fail = (error: unknown): DesktopUpdateState => {
     const message = describeUpdaterError(error);
     log.error("[updater] Échec", error);
-    const next = { status: "error", message } satisfies DesktopUpdateState;
+    const next = {
+      status: "error",
+      message,
+      ...(requiredVersion
+        ? { version: requiredVersion, requiresUpdate: true }
+        : {}),
+    } satisfies DesktopUpdateState;
     send(next);
     return next;
   };
@@ -117,10 +132,12 @@ export function setupAutoUpdates(
       fail(new Error("Version invalide dans latest.yml"));
       return;
     }
+    requiredVersion = version;
     log.info(`[updater] Version ${version} disponible`);
-    send({ status: "available", version });
+    send({ status: "available", version, requiresUpdate: true });
   };
   const onNotAvailable = (info: UpdateInfo) => {
+    requiredVersion = null;
     const remoteVersion = updateVersion(info) ?? "inconnue";
     const currentVersion = app.getVersion();
     log.info(
@@ -134,6 +151,8 @@ export function setupAutoUpdates(
       : 0;
     send({
       status: "downloading",
+      version: requiredVersion ?? undefined,
+      requiresUpdate: Boolean(requiredVersion),
       percent,
       transferred: Math.max(0, progress.transferred),
       total: Math.max(0, progress.total),
@@ -145,18 +164,21 @@ export function setupAutoUpdates(
       fail(new Error("Version invalide dans latest.yml"));
       return;
     }
+    requiredVersion = version;
     log.info(`[updater] Version ${version} prête à installer`);
-    send({ status: "ready", version });
+    send({ status: "ready", version, requiresUpdate: true });
   };
   const onError = (error: Error) => {
     fail(error);
   };
   const onCancelled = (info: UpdateInfo) => {
-    const version = updateVersion(info) ?? undefined;
+    const version = updateVersion(info) ?? requiredVersion ?? undefined;
+    if (version) requiredVersion = version;
     log.warn(`[updater] Téléchargement ${version ?? ""} annulé`);
     send({
       status: "error",
       version,
+      requiresUpdate: Boolean(version),
       message:
         "Le téléchargement de la mise à jour a été annulé. Relance la vérification.",
     });

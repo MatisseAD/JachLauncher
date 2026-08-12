@@ -24,15 +24,18 @@ function testProtector(options?: {
       return options?.available ?? true;
     },
     async encrypt(plainText) {
-      return Buffer.from(`encrypted:${Buffer.from(plainText).toString("base64")}`);
+      return Buffer.from(
+        `encrypted:${Buffer.from(plainText).toString("base64")}`,
+      );
     },
     async decrypt(encrypted) {
       const payload = encrypted.toString("utf8");
       if (!payload.startsWith("encrypted:")) throw new Error("ciphertext");
       return {
-        result: Buffer.from(payload.slice("encrypted:".length), "base64").toString(
-          "utf8",
-        ),
+        result: Buffer.from(
+          payload.slice("encrypted:".length),
+          "base64",
+        ).toString("utf8"),
         shouldReEncrypt: options?.shouldReEncrypt ?? false,
       };
     },
@@ -41,9 +44,9 @@ function testProtector(options?: {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -75,9 +78,9 @@ describe("cache MSAL chiffré", () => {
       await temporaryCachePath(),
       testProtector({ available: false }),
     );
-    await expect(store.save(JSON.stringify({ value: 1 }))).rejects.toMatchObject(
-      { code: "encryption_unavailable" },
-    );
+    await expect(
+      store.save(JSON.stringify({ value: 1 })),
+    ).rejects.toMatchObject({ code: "encryption_unavailable" });
     await expect(store.load()).rejects.toMatchObject({
       code: "encryption_unavailable",
     });

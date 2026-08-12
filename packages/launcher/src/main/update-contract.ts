@@ -1,10 +1,18 @@
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
+declare const __JACH_SIGNED_UPDATE_FEED_URL__: string | undefined;
+
 export const WINDOWS_UPDATE_FEED_URL =
-  "https://5v6eph0amoamojpm.public.blob.vercel-storage.com/releases/windows";
+  (typeof __JACH_SIGNED_UPDATE_FEED_URL__ === "string"
+    ? __JACH_SIGNED_UPDATE_FEED_URL__
+    : process.env.JACH_SIGNED_UPDATE_FEED_URL
+  )?.trim() ?? "";
 
 export function validateUpdateFeedUrl(input: string): string {
+  if (!input.trim()) {
+    throw new Error("Le canal signé de mise à jour n'est pas configuré.");
+  }
   const url = new URL(input.trim());
   if (
     url.protocol !== "https:" ||

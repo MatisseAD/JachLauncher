@@ -105,10 +105,27 @@ export type DesktopUpdateStatus =
 export interface DesktopUpdateState {
   status: DesktopUpdateStatus;
   version?: string;
+  /** Une version distante valide a déjà été détectée. */
+  requiresUpdate?: boolean;
   percent?: number;
   transferred?: number;
   total?: number;
   message?: string;
+}
+
+/**
+ * La notification reste invisible pour les contrôles de routine. Une erreur
+ * n'est affichée que si elle interrompt une mise à jour déjà identifiée.
+ */
+export function shouldShowDesktopUpdate(state: DesktopUpdateState): boolean {
+  return (
+    state.status === "available" ||
+    state.status === "downloading" ||
+    state.status === "ready" ||
+    (state.status === "error" &&
+      state.requiresUpdate === true &&
+      Boolean(state.version))
+  );
 }
 
 export interface DesktopUpdateActionResult {

@@ -59,6 +59,12 @@ describe("échanges Microsoft vers Minecraft", () => {
       String(fetchImpl.mock.calls[0][1]?.body),
     ) as { Properties: { RpsTicket: string } };
     expect(firstRequest.Properties.RpsTicket).toBe("d=microsoft-token");
+    expect(fetchImpl.mock.calls[0][1]?.headers).toMatchObject({
+      "x-xbl-contract-version": "1",
+    });
+    expect(fetchImpl.mock.calls[1][1]?.headers).toMatchObject({
+      "x-xbl-contract-version": "1",
+    });
     expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
       "https://user.auth.xboxlive.com/user/authenticate",
       "https://xsts.auth.xboxlive.com/xsts/authorize",
@@ -99,5 +105,34 @@ describe("échanges Microsoft vers Minecraft", () => {
     await expect(
       exchangeMicrosoftTokenForMinecraft("microsoft-token", { fetchImpl }),
     ).rejects.toMatchObject({ code: "MINECRAFT_JAVA_LICENSE_MISSING" });
+  });
+
+  it("identifie un nouvel ID Azure non approuvé par Mojang", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ Token: "xbox-token" }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          Token: "xsts-token",
+          DisplayClaims: { xui: [{ uhs: "user-hash" }] },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            path: "/authentication/login_with_xbox",
+            errorMessage:
+              "Invalid app registration, see https://aka.ms/AppRegInfo for more information",
+          },
+          403,
+        ),
+      );
+
+    await expect(
+      exchangeMicrosoftTokenForMinecraft("microsoft-token", { fetchImpl }),
+    ).rejects.toMatchObject({
+      code: "MINECRAFT_APP_REGISTRATION_NOT_APPROVED",
+      status: 403,
+    });
   });
 });

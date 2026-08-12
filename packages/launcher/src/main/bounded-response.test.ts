@@ -6,9 +6,9 @@ import {
 
 describe("lecture HTTP bornée", () => {
   it("lit un petit corps sans dépendre de Content-Length", async () => {
-    await expect(
-      readResponseTextBounded(new Response("ok"), 8),
-    ).resolves.toBe("ok");
+    await expect(readResponseTextBounded(new Response("ok"), 8)).resolves.toBe(
+      "ok",
+    );
   });
 
   it("annule un flux chunked dès le dépassement", async () => {

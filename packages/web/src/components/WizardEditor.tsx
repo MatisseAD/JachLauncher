@@ -19,6 +19,7 @@ import UiIcon, { type UiIconName } from "./UiIcon";
 import LauncherPreview from "./LauncherPreview";
 import AssetUpload from "./editor/AssetUpload";
 import FileListEditor from "./editor/FileListEditor";
+import ContentCatalogEditor from "./editor/ContentCatalogEditor";
 import NewsEditor from "./editor/NewsEditor";
 import { fetchReleaseVersions, FALLBACK_VERSIONS } from "@/lib/mc-versions";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -146,7 +147,7 @@ function validateStep(index: number, data: LauncherFormData): string | null {
         file.size <= 0,
     );
     if (incomplete) {
-      return `Complète le nom, l’URL, la taille et le SHA-256 de « ${incomplete.name || incomplete.fileName || "fichier sans nom"} ».`;
+      return `L’import manuel « ${incomplete.name || incomplete.fileName || "sans nom"} » est incomplet. Ouvre la section avancée pour le corriger.`;
     }
   }
 
@@ -843,330 +844,343 @@ function StepAppearance({ data, set }: StepProps) {
         />
       </div>
 
-      <div className="customization-block">
-        <div className="customization-heading">
-          <div>
-            <strong>Lisibilité du fond</strong>
-            <span>
-              Ajuste le cadrage et la profondeur sans modifier ton image.
+      <details className="advanced-disclosure">
+        <summary>Personnaliser davantage le design</summary>
+        <p className="hint">
+          Le modèle choisi est déjà prêt. Ouvre cette section uniquement si tu
+          veux ajuster le cadrage, les couleurs ou la disposition.
+        </p>
+        <div className="customization-block">
+          <div className="customization-heading">
+            <div>
+              <strong>Lisibilité du fond</strong>
+              <span>
+                Ajuste le cadrage et la profondeur sans modifier ton image.
+              </span>
+            </div>
+            <span className="pill">
+              {data.backgroundOverlay}% d’assombrissement
             </span>
           </div>
-          <span className="pill">
-            {data.backgroundOverlay}% d’assombrissement
-          </span>
-        </div>
-        <div className="grid cols-2">
-          <div className="field">
-            <label>Recadrage</label>
-            <select
-              value={data.backgroundFit}
-              onChange={(event) =>
-                set(
-                  "backgroundFit",
-                  event.target.value as LauncherFormData["backgroundFit"],
-                )
-              }
-            >
-              <option value="cover">Remplir sans déformer</option>
-              <option value="contain">Afficher l’image entière</option>
-              <option value="fill">Étirer dans la fenêtre</option>
-            </select>
+          <div className="grid cols-2">
+            <div className="field">
+              <label>Recadrage</label>
+              <select
+                value={data.backgroundFit}
+                onChange={(event) =>
+                  set(
+                    "backgroundFit",
+                    event.target.value as LauncherFormData["backgroundFit"],
+                  )
+                }
+              >
+                <option value="cover">Remplir sans déformer</option>
+                <option value="contain">Afficher l’image entière</option>
+                <option value="fill">Étirer dans la fenêtre</option>
+              </select>
+            </div>
+            <div className="field">
+              <label>Point focal</label>
+              <select
+                value={data.backgroundPosition}
+                onChange={(event) =>
+                  set(
+                    "backgroundPosition",
+                    event.target
+                      .value as LauncherFormData["backgroundPosition"],
+                  )
+                }
+              >
+                <option value="center">Centre</option>
+                <option value="top">Haut</option>
+                <option value="bottom">Bas</option>
+                <option value="left">Gauche</option>
+                <option value="right">Droite</option>
+              </select>
+            </div>
           </div>
-          <div className="field">
-            <label>Point focal</label>
-            <select
-              value={data.backgroundPosition}
-              onChange={(event) =>
-                set(
-                  "backgroundPosition",
-                  event.target.value as LauncherFormData["backgroundPosition"],
-                )
-              }
-            >
-              <option value="center">Centre</option>
-              <option value="top">Haut</option>
-              <option value="bottom">Bas</option>
-              <option value="left">Gauche</option>
-              <option value="right">Droite</option>
-            </select>
+          <div className="range-grid">
+            <label className="range-field">
+              <span>
+                Assombrissement <strong>{data.backgroundOverlay}%</strong>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={90}
+                value={data.backgroundOverlay}
+                onChange={(event) =>
+                  set("backgroundOverlay", Number(event.target.value))
+                }
+              />
+            </label>
+            <label className="range-field">
+              <span>
+                Flou du fond <strong>{data.backgroundBlur}px</strong>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={20}
+                value={data.backgroundBlur}
+                onChange={(event) =>
+                  set("backgroundBlur", Number(event.target.value))
+                }
+              />
+            </label>
+            <label className="range-field">
+              <span>
+                Opacité des panneaux <strong>{data.panelOpacity}%</strong>
+              </span>
+              <input
+                type="range"
+                min={20}
+                max={100}
+                value={data.panelOpacity}
+                onChange={(event) =>
+                  set("panelOpacity", Number(event.target.value))
+                }
+              />
+            </label>
+            <label className="range-field">
+              <span>
+                Coins des cartes <strong>{data.cornerRadius}px</strong>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={32}
+                value={data.cornerRadius}
+                onChange={(event) =>
+                  set("cornerRadius", Number(event.target.value))
+                }
+              />
+            </label>
           </div>
         </div>
-        <div className="range-grid">
-          <label className="range-field">
-            <span>
-              Assombrissement <strong>{data.backgroundOverlay}%</strong>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={90}
-              value={data.backgroundOverlay}
-              onChange={(event) =>
-                set("backgroundOverlay", Number(event.target.value))
-              }
-            />
-          </label>
-          <label className="range-field">
-            <span>
-              Flou du fond <strong>{data.backgroundBlur}px</strong>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={20}
-              value={data.backgroundBlur}
-              onChange={(event) =>
-                set("backgroundBlur", Number(event.target.value))
-              }
-            />
-          </label>
-          <label className="range-field">
-            <span>
-              Opacité des panneaux <strong>{data.panelOpacity}%</strong>
-            </span>
-            <input
-              type="range"
-              min={20}
-              max={100}
-              value={data.panelOpacity}
-              onChange={(event) =>
-                set("panelOpacity", Number(event.target.value))
-              }
-            />
-          </label>
-          <label className="range-field">
-            <span>
-              Coins des cartes <strong>{data.cornerRadius}px</strong>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={32}
-              value={data.cornerRadius}
-              onChange={(event) =>
-                set("cornerRadius", Number(event.target.value))
-              }
-            />
-          </label>
-        </div>
-      </div>
 
-      <div className="field">
-        <label>Style visuel</label>
-        <div className="choice-grid visual-choice-grid">
+        <div className="field">
+          <label>Style visuel</label>
+          <div className="choice-grid visual-choice-grid">
+            {(
+              [
+                "premium",
+                "dark",
+                "light",
+                "pixel",
+                "medieval",
+                "futuristic",
+              ] as const
+            ).map((style) => (
+              <button
+                type="button"
+                key={style}
+                className={`choice ${data.visualStyle === style ? "active" : ""}`}
+                onClick={() => set("visualStyle", style)}
+              >
+                <span className="style-swatch" data-style={style} />
+                <span className="name">
+                  {style === "premium"
+                    ? "Premium"
+                    : style === "dark"
+                      ? "Sombre"
+                      : style === "light"
+                        ? "Clair"
+                        : style === "pixel"
+                          ? "Pixel"
+                          : style === "medieval"
+                            ? "Médiéval"
+                            : "Futuriste"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="color-grid">
           {(
             [
-              "premium",
-              "dark",
-              "light",
-              "pixel",
-              "medieval",
-              "futuristic",
+              ["primaryColor", "Couleur principale"],
+              ["secondaryColor", "Couleur secondaire"],
+              ["textColor", "Couleur du texte"],
             ] as const
-          ).map((style) => (
-            <button
-              type="button"
-              key={style}
-              className={`choice ${data.visualStyle === style ? "active" : ""}`}
-              onClick={() => set("visualStyle", style)}
-            >
-              <span className="style-swatch" data-style={style} />
-              <span className="name">
-                {style === "premium"
-                  ? "Premium"
-                  : style === "dark"
-                    ? "Sombre"
-                    : style === "light"
-                      ? "Clair"
-                      : style === "pixel"
-                        ? "Pixel"
-                        : style === "medieval"
-                          ? "Médiéval"
-                          : "Futuriste"}
+          ).map(([key, label]) => (
+            <label className="color-field" key={key}>
+              <span>{label}</span>
+              <span>
+                <input
+                  type="color"
+                  value={data[key]}
+                  onChange={(event) => set(key, event.target.value)}
+                />
+                <code>{data[key]}</code>
               </span>
-            </button>
+            </label>
           ))}
         </div>
-      </div>
 
-      <div className="color-grid">
-        {(
-          [
-            ["primaryColor", "Couleur principale"],
-            ["secondaryColor", "Couleur secondaire"],
-            ["textColor", "Couleur du texte"],
-          ] as const
-        ).map(([key, label]) => (
-          <label className="color-field" key={key}>
-            <span>{label}</span>
+        <div className="field">
+          <label>Style du bouton Jouer</label>
+          <div className="choice-grid">
+            {(["glow", "flat", "pixel", "outline"] as const).map((style) => (
+              <button
+                type="button"
+                key={style}
+                className={`choice ${data.buttonStyle === style ? "active" : ""}`}
+                onClick={() => set("buttonStyle", style)}
+              >
+                <div className="name" style={{ textTransform: "capitalize" }}>
+                  {style}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid cols-2">
+          <div className="field">
+            <label>Forme des cartes</label>
+            <select
+              value={data.cardShape}
+              onChange={(e) =>
+                set(
+                  "cardShape",
+                  e.target.value as LauncherFormData["cardShape"],
+                )
+              }
+            >
+              <option value="rounded">Arrondies</option>
+              <option value="sharp">Carrées (pixel)</option>
+              <option value="pill">Très arrondies</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Placement du menu</label>
+            <select
+              value={data.menuPlacement}
+              onChange={(e) =>
+                set(
+                  "menuPlacement",
+                  e.target.value as LauncherFormData["menuPlacement"],
+                )
+              }
+            >
+              <option value="left">À gauche</option>
+              <option value="top">En haut</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Police du launcher</label>
+            <select
+              value={data.fontFamily}
+              onChange={(event) =>
+                set(
+                  "fontFamily",
+                  event.target.value as LauncherFormData["fontFamily"],
+                )
+              }
+            >
+              <option value="poppins">Poppins</option>
+              <option value="inter">Inter</option>
+              <option value="system">Système</option>
+              <option value="serif">Serif fantasy</option>
+              <option value="pixel">Pixel</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid cols-2">
+          <div className="field">
+            <label>Thème</label>
+            <select
+              value={data.theme}
+              onChange={(e) =>
+                set("theme", e.target.value as LauncherFormData["theme"])
+              }
+            >
+              <option value="dark">Sombre</option>
+              <option value="light">Clair</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Densité de l’interface</label>
+            <select
+              value={data.contentDensity}
+              onChange={(event) =>
+                set(
+                  "contentDensity",
+                  event.target.value as LauncherFormData["contentDensity"],
+                )
+              }
+            >
+              <option value="compact">Compacte</option>
+              <option value="comfortable">Confortable</option>
+              <option value="spacious">Aérée</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid cols-2">
+          <div className="field">
+            <label>Style du menu</label>
+            <select
+              value={data.sidebarStyle}
+              onChange={(event) =>
+                set(
+                  "sidebarStyle",
+                  event.target.value as LauncherFormData["sidebarStyle"],
+                )
+              }
+            >
+              <option value="glass">Verre dépoli</option>
+              <option value="solid">Plein</option>
+              <option value="floating">Flottant</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Forme du logo</label>
+            <select
+              value={data.logoShape}
+              onChange={(event) =>
+                set(
+                  "logoShape",
+                  event.target.value as LauncherFormData["logoShape"],
+                )
+              }
+            >
+              <option value="rounded">Arrondi</option>
+              <option value="square">Carré</option>
+              <option value="circle">Cercle</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid cols-2">
+          <div className="field">
+            <label htmlFor="play-button-label">Texte du bouton principal</label>
+            <input
+              id="play-button-label"
+              maxLength={24}
+              value={data.playButtonLabel}
+              placeholder="JOUER"
+              onChange={(event) => set("playButtonLabel", event.target.value)}
+            />
+          </div>
+          <label className="switch-row customization-switch">
+            <input
+              type="checkbox"
+              checked={data.showServerStatus}
+              onChange={(event) =>
+                set("showServerStatus", event.target.checked)
+              }
+            />
             <span>
-              <input
-                type="color"
-                value={data[key]}
-                onChange={(event) => set(key, event.target.value)}
-              />
-              <code>{data[key]}</code>
+              <strong>Afficher l’état du serveur</strong>
+              <small>Joueurs, latence, version et message du jour.</small>
             </span>
           </label>
-        ))}
-      </div>
-
-      <div className="field">
-        <label>Style du bouton Jouer</label>
-        <div className="choice-grid">
-          {(["glow", "flat", "pixel", "outline"] as const).map((style) => (
-            <button
-              type="button"
-              key={style}
-              className={`choice ${data.buttonStyle === style ? "active" : ""}`}
-              onClick={() => set("buttonStyle", style)}
-            >
-              <div className="name" style={{ textTransform: "capitalize" }}>
-                {style}
-              </div>
-            </button>
-          ))}
         </div>
-      </div>
-
-      <div className="grid cols-2">
-        <div className="field">
-          <label>Forme des cartes</label>
-          <select
-            value={data.cardShape}
-            onChange={(e) =>
-              set("cardShape", e.target.value as LauncherFormData["cardShape"])
-            }
-          >
-            <option value="rounded">Arrondies</option>
-            <option value="sharp">Carrées (pixel)</option>
-            <option value="pill">Très arrondies</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Placement du menu</label>
-          <select
-            value={data.menuPlacement}
-            onChange={(e) =>
-              set(
-                "menuPlacement",
-                e.target.value as LauncherFormData["menuPlacement"],
-              )
-            }
-          >
-            <option value="left">À gauche</option>
-            <option value="top">En haut</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Police du launcher</label>
-          <select
-            value={data.fontFamily}
-            onChange={(event) =>
-              set(
-                "fontFamily",
-                event.target.value as LauncherFormData["fontFamily"],
-              )
-            }
-          >
-            <option value="poppins">Poppins</option>
-            <option value="inter">Inter</option>
-            <option value="system">Système</option>
-            <option value="serif">Serif fantasy</option>
-            <option value="pixel">Pixel</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid cols-2">
-        <div className="field">
-          <label>Thème</label>
-          <select
-            value={data.theme}
-            onChange={(e) =>
-              set("theme", e.target.value as LauncherFormData["theme"])
-            }
-          >
-            <option value="dark">Sombre</option>
-            <option value="light">Clair</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Densité de l’interface</label>
-          <select
-            value={data.contentDensity}
-            onChange={(event) =>
-              set(
-                "contentDensity",
-                event.target.value as LauncherFormData["contentDensity"],
-              )
-            }
-          >
-            <option value="compact">Compacte</option>
-            <option value="comfortable">Confortable</option>
-            <option value="spacious">Aérée</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid cols-2">
-        <div className="field">
-          <label>Style du menu</label>
-          <select
-            value={data.sidebarStyle}
-            onChange={(event) =>
-              set(
-                "sidebarStyle",
-                event.target.value as LauncherFormData["sidebarStyle"],
-              )
-            }
-          >
-            <option value="glass">Verre dépoli</option>
-            <option value="solid">Plein</option>
-            <option value="floating">Flottant</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Forme du logo</label>
-          <select
-            value={data.logoShape}
-            onChange={(event) =>
-              set(
-                "logoShape",
-                event.target.value as LauncherFormData["logoShape"],
-              )
-            }
-          >
-            <option value="rounded">Arrondi</option>
-            <option value="square">Carré</option>
-            <option value="circle">Cercle</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid cols-2">
-        <div className="field">
-          <label htmlFor="play-button-label">Texte du bouton principal</label>
-          <input
-            id="play-button-label"
-            maxLength={24}
-            value={data.playButtonLabel}
-            placeholder="JOUER"
-            onChange={(event) => set("playButtonLabel", event.target.value)}
-          />
-        </div>
-        <label className="switch-row customization-switch">
-          <input
-            type="checkbox"
-            checked={data.showServerStatus}
-            onChange={(event) => set("showServerStatus", event.target.checked)}
-          />
-          <span>
-            <strong>Afficher l’état du serveur</strong>
-            <small>Joueurs, latence, version et message du jour.</small>
-          </span>
-        </label>
-      </div>
+      </details>
     </>
   );
 }
@@ -1266,132 +1280,191 @@ function StepMinecraft({ data, set }: StepProps) {
         </div>
       </div>
 
-      <div className="grid cols-2">
-        <div className="field">
-          <label>Adresse du serveur</label>
-          <input
-            placeholder="play.monserveur.fr"
-            value={data.serverAddress ?? ""}
-            onChange={(e) => set("serverAddress", e.target.value)}
-          />
-          <div className="hint">Optionnel. Affiché dans le launcher.</div>
-        </div>
-        <div className="field">
-          <label>Port du serveur</label>
-          <input
-            type="number"
-            placeholder="25565"
-            value={data.serverPort ?? ""}
-            onChange={(e) =>
-              set(
-                "serverPort",
-                e.target.value ? parseInt(e.target.value) : null,
-              )
-            }
-          />
-          <div className="hint">Par défaut : 25565.</div>
+      <div className="wizard-tip">
+        <UiIcon name="check" size={18} />
+        <div>
+          <strong>Les réglages par défaut sont prêts</strong>
+          <p>
+            Tu peux continuer maintenant. L’adresse du serveur, la mémoire et
+            les options JVM restent facultatives.
+          </p>
         </div>
       </div>
 
-      <div className="field">
-        <label>Message avant lancement</label>
-        <input
-          placeholder="Ex : Bon jeu sur Skyblock Légendaire !"
-          value={data.preLaunchMessage}
-          onChange={(e) => set("preLaunchMessage", e.target.value)}
-        />
-      </div>
-
-      <div className="grid cols-2">
-        <div className="field">
-          <label>RAM minimale : {data.memMin} Mo</label>
-          <input
-            type="range"
-            min={512}
-            max={16384}
-            step={512}
-            value={data.memMin}
-            onChange={(e) => set("memMin", parseInt(e.target.value))}
-          />
-        </div>
-        <div className="field">
-          <label>RAM maximale : {data.memMax} Mo</label>
-          <input
-            type="range"
-            min={1024}
-            max={32768}
-            step={512}
-            value={data.memMax}
-            onChange={(e) => set("memMax", parseInt(e.target.value))}
-          />
-          <div className="hint">
-            Recommandé : 4096 Mo pour un serveur moddé.
+      <details className="advanced-disclosure">
+        <summary>Serveur, mémoire et options techniques</summary>
+        <div className="grid cols-2">
+          <div className="field">
+            <label>Adresse du serveur</label>
+            <input
+              placeholder="play.monserveur.fr"
+              value={data.serverAddress ?? ""}
+              onChange={(e) => set("serverAddress", e.target.value)}
+            />
+            <div className="hint">Optionnel. Affiché dans le launcher.</div>
+          </div>
+          <div className="field">
+            <label>Port du serveur</label>
+            <input
+              type="number"
+              placeholder="25565"
+              value={data.serverPort ?? ""}
+              onChange={(e) =>
+                set(
+                  "serverPort",
+                  e.target.value ? parseInt(e.target.value) : null,
+                )
+              }
+            />
+            <div className="hint">Par défaut : 25565.</div>
           </div>
         </div>
-      </div>
 
-      <button
-        className="btn ghost sm"
-        type="button"
-        onClick={() => setAdvanced((a) => !a)}
-      >
-        {advanced ? "▾" : "▸"} Arguments avancés (JVM)
-      </button>
-      {advanced && (
-        <div className="field" style={{ marginTop: 12 }}>
-          <label>Arguments JVM (un par ligne)</label>
-          <textarea
-            value={data.jvmArgs.join("\n")}
-            placeholder="-XX:+UseG1GC&#10;-XX:MaxGCPauseMillis=200"
-            onChange={(e) =>
-              set(
-                "jvmArgs",
-                e.target.value
-                  .split("\n")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              )
-            }
+        <div className="field">
+          <label>Message avant lancement</label>
+          <input
+            placeholder="Ex : Bon jeu sur Skyblock Légendaire !"
+            value={data.preLaunchMessage}
+            onChange={(e) => set("preLaunchMessage", e.target.value)}
           />
-          <div className="hint">Pour utilisateurs avancés uniquement.</div>
         </div>
-      )}
+
+        <div className="grid cols-2">
+          <div className="field">
+            <label>RAM minimale : {data.memMin} Mo</label>
+            <input
+              type="range"
+              min={512}
+              max={16384}
+              step={512}
+              value={data.memMin}
+              onChange={(e) => set("memMin", parseInt(e.target.value))}
+            />
+          </div>
+          <div className="field">
+            <label>RAM maximale : {data.memMax} Mo</label>
+            <input
+              type="range"
+              min={1024}
+              max={32768}
+              step={512}
+              value={data.memMax}
+              onChange={(e) => set("memMax", parseInt(e.target.value))}
+            />
+            <div className="hint">
+              Recommandé : 4096 Mo pour un serveur moddé.
+            </div>
+          </div>
+        </div>
+
+        <button
+          className="btn ghost sm"
+          type="button"
+          onClick={() => setAdvanced((a) => !a)}
+        >
+          {advanced ? "▾" : "▸"} Arguments avancés (JVM)
+        </button>
+        {advanced && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>Arguments JVM (un par ligne)</label>
+            <textarea
+              value={data.jvmArgs.join("\n")}
+              placeholder="-XX:+UseG1GC&#10;-XX:MaxGCPauseMillis=200"
+              onChange={(e) =>
+                set(
+                  "jvmArgs",
+                  e.target.value
+                    .split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                )
+              }
+            />
+            <div className="hint">Pour utilisateurs avancés uniquement.</div>
+          </div>
+        )}
+      </details>
     </>
   );
 }
 
 /* =============================== Étape 4 =============================== */
 function StepContent({ data, set }: StepProps) {
+  const content = {
+    mod: data.mods,
+    resourcepack: data.resourcepacks,
+    shaderpack: data.shaderpacks,
+  };
+
+  function updateContent(
+    kind: "mod" | "resourcepack" | "shaderpack",
+    items: DownloadableFile[],
+  ) {
+    if (kind === "mod") set("mods", items);
+    if (kind === "resourcepack") set("resourcepacks", items);
+    if (kind === "shaderpack") set("shaderpacks", items);
+  }
+
   return (
     <>
       <div className="wizard-tip">
         <UiIcon name="shield" size={18} />
         <div>
-          <strong>Des téléchargements vérifiés</strong>
+          <strong>Choisis, nous configurons le fichier</strong>
           <p>
-            Le SHA-256 garantit que le fichier reçu par tes joueurs correspond
-            exactement à celui que tu as configuré.
+            Recherche un contenu compatible puis clique sur Ajouter. L’URL, la
+            version, la taille et l’empreinte de sécurité sont récupérées et
+            vérifiées côté serveur.
           </p>
         </div>
       </div>
-      <FileListEditor
-        label="Mods"
-        hint="Colle l'URL directe du .jar (ex : lien de téléchargement Modrinth)."
-        items={data.mods}
-        onChange={(v) => set("mods", v)}
+
+      <ContentCatalogEditor
+        minecraftVersion={data.mcVersion}
+        loader={data.loader}
+        items={content}
+        onChange={updateContent}
       />
-      <hr className="hr" />
-      <FileListEditor
-        label="Resource packs"
-        items={data.resourcepacks}
-        onChange={(v) => set("resourcepacks", v)}
-      />
-      <hr className="hr" />
-      <FileListEditor
-        label="Shader packs"
-        items={data.shaderpacks}
-        onChange={(v) => set("shaderpacks", v)}
-      />
+
+      <details className="advanced-disclosure">
+        <summary>Importer un fichier manuellement (avancé)</summary>
+        <p className="hint">
+          Réservé aux fichiers absents des catalogues. Tu dois connaître l’URL
+          directe, la taille exacte et le SHA-256 publié par la source.
+        </p>
+        <FileListEditor
+          label="Mods manuels"
+          items={data.mods.filter((file) => file.source === "direct")}
+          onChange={(manual) =>
+            set("mods", [
+              ...data.mods.filter((file) => file.source !== "direct"),
+              ...manual,
+            ])
+          }
+        />
+        <hr className="hr" />
+        <FileListEditor
+          label="Packs de ressources manuels"
+          items={data.resourcepacks.filter((file) => file.source === "direct")}
+          onChange={(manual) =>
+            set("resourcepacks", [
+              ...data.resourcepacks.filter((file) => file.source !== "direct"),
+              ...manual,
+            ])
+          }
+        />
+        <hr className="hr" />
+        <FileListEditor
+          label="Shaders manuels"
+          items={data.shaderpacks.filter((file) => file.source === "direct")}
+          onChange={(manual) =>
+            set("shaderpacks", [
+              ...data.shaderpacks.filter((file) => file.source !== "direct"),
+              ...manual,
+            ])
+          }
+        />
+      </details>
     </>
   );
 }

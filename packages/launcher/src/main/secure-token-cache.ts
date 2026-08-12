@@ -108,7 +108,10 @@ export class EncryptedTokenCacheStore {
         { cause: error },
       );
     }
-    if (!encrypted.length || encrypted.length > MAX_SERIALIZED_CACHE_BYTES * 2) {
+    if (
+      !encrypted.length ||
+      encrypted.length > MAX_SERIALIZED_CACHE_BYTES * 2
+    ) {
       throw new SecureTokenCacheError(
         "cache_invalid",
         "Le cache Microsoft chiffré est vide ou trop volumineux.",

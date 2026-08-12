@@ -35,13 +35,13 @@ describe("Microsoft OAuth PKCE", () => {
 
   it("retransmet state et nonce à MSAL lors de l'échange du code", () => {
     const transaction = createMicrosoftOAuthTransaction();
-    expect(createAuthorizationCodePayload("one-time-code", transaction)).toEqual(
-      {
-        code: "one-time-code",
-        state: transaction.state,
-        nonce: transaction.nonce,
-      },
-    );
+    expect(
+      createAuthorizationCodePayload("one-time-code", transaction),
+    ).toEqual({
+      code: "one-time-code",
+      state: transaction.state,
+      nonce: transaction.nonce,
+    });
   });
 
   it("rejette un callback dont le state ne correspond pas", () => {
@@ -63,6 +63,16 @@ describe("callback OAuth Microsoft loopback", () => {
     });
 
     expect(callback.redirectUri).toMatch(/^http:\/\/localhost:\d+$/);
+    expect(callback.listeningHosts).toContain("127.0.0.1");
+
+    const callbackPort = new URL(callback.redirectUri).port;
+    const ipv4Probe = await fetch(`http://127.0.0.1:${callbackPort}/complete`);
+    expect(ipv4Probe.status).toBe(404);
+    if (callback.listeningHosts.includes("::1")) {
+      const ipv6Probe = await fetch(`http://[::1]:${callbackPort}/inconnu`);
+      expect(ipv6Probe.status).toBe(404);
+    }
+
     const response = await fetch(
       `${callback.redirectUri}/?code=one-time-code&state=${state}`,
       { redirect: "manual" },
@@ -71,7 +81,17 @@ describe("callback OAuth Microsoft loopback", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/complete");
     await expect(callback.waitForCode).resolves.toBe("one-time-code");
-    await callback.close();
+
+    // Même si MSAL termine immédiatement l'échange du code, close() laisse au
+    // navigateur le temps de charger la page finale au lieu d'afficher ERR_CONNECTION_REFUSED.
+    const closePromise = callback.close();
+    const completion = await fetch(`${callback.redirectUri}/complete`);
+    const completionHtml = await completion.text();
+    expect(completion.status).toBe(200);
+    expect(completionHtml).toContain("Autorisation reçue");
+    expect(completionHtml).toContain("Fermer cet onglet");
+    expect(completionHtml).not.toContain("one-time-code");
+    await closePromise;
   });
 
   it("bloque le callback et ferme le serveur en cas de state invalide", async () => {
