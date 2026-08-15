@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   describeUpdaterError,
+  parseGithubUpdateRepository,
   validDesktopVersion,
   validateUpdateFeedUrl,
   WINDOWS_UPDATE_FEED_URL,
@@ -64,5 +65,46 @@ describe("contrat de mise à jour desktop", () => {
     expect(
       describeUpdaterError(new Error("net::ERR_INTERNET_DISCONNECTED")),
     ).toMatch(/connexion/);
+  });
+});
+
+describe("parseGithubUpdateRepository", () => {
+  it("renvoie null quand aucun dépôt n'est configuré", () => {
+    expect(parseGithubUpdateRepository("")).toBeNull();
+    expect(parseGithubUpdateRepository("   ")).toBeNull();
+  });
+
+  it("accepte le format owner/repo", () => {
+    expect(parseGithubUpdateRepository("MatisseAD/YourLauncher")).toEqual({
+      owner: "MatisseAD",
+      repo: "YourLauncher",
+    });
+  });
+
+  it("accepte une URL GitHub complète et ignore .git", () => {
+    expect(
+      parseGithubUpdateRepository(
+        "https://github.com/MatisseAD/YourLauncher.git",
+      ),
+    ).toEqual({ owner: "MatisseAD", repo: "YourLauncher" });
+  });
+
+  it("refuse un hébergeur différent de github.com", () => {
+    expect(() =>
+      parseGithubUpdateRepository("https://gitlab.com/owner/repo"),
+    ).toThrow(/github\.com/);
+  });
+
+  it("refuse un format incomplet ou trop profond", () => {
+    expect(() => parseGithubUpdateRepository("YourLauncher")).toThrow(
+      /owner\/repo/,
+    );
+    expect(() => parseGithubUpdateRepository("a/b/c")).toThrow(/owner\/repo/);
+  });
+
+  it("refuse les caractères invalides", () => {
+    expect(() => parseGithubUpdateRepository("owner/re po")).toThrow(
+      /invalides/,
+    );
   });
 });

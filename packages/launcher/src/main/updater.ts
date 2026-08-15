@@ -12,9 +12,11 @@ import type {
 } from "../shared-types/ipc";
 import {
   describeUpdaterError,
+  parseGithubUpdateRepository,
   validDesktopVersion,
   validateUpdateFeedUrl,
   WINDOWS_UPDATE_FEED_URL,
+  type GithubUpdateFeed,
 } from "./update-contract";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -67,27 +69,60 @@ export function setupAutoUpdates(
   }
 
   const updater = getAutoUpdater();
-  let feedUrl: string;
+
+  // Canal privilégié : les releases GitHub du dépôt du launcher. À défaut, on
+  // conserve le canal signé générique. electron-updater compare lui-même la
+  // version publiée à `app.getVersion()` et ignore les pré-releases.
+  let channelLabel: string;
+  let githubFeed: GithubUpdateFeed | null = null;
   try {
-    feedUrl = validateUpdateFeedUrl(WINDOWS_UPDATE_FEED_URL);
+    githubFeed = parseGithubUpdateRepository();
   } catch (error) {
-    log.error("[updater] Canal signé absent ou invalide", error);
+    log.error("[updater] Dépôt GitHub de mise à jour invalide", error);
     return disabledController(
-      "Le canal signé de mise à jour n'est pas configuré dans cette version.",
+      "Le dépôt GitHub de mise à jour est mal configuré dans cette version.",
     );
   }
+
+  if (githubFeed) {
+    updater.setFeedURL({
+      provider: "github",
+      owner: githubFeed.owner,
+      repo: githubFeed.repo,
+      // Seules les releases publiées (non brouillon, non pré-release) sont
+      // proposées aux joueurs.
+      releaseType: "release",
+    });
+    channelLabel = `github:${githubFeed.owner}/${githubFeed.repo}`;
+  } else {
+    let feedUrl: string;
+    try {
+      feedUrl = validateUpdateFeedUrl(WINDOWS_UPDATE_FEED_URL);
+    } catch (error) {
+      log.error("[updater] Canal signé absent ou invalide", error);
+      return disabledController(
+        "Le canal de mise à jour n'est pas configuré dans cette version.",
+      );
+    }
+    updater.setFeedURL({
+      provider: "generic",
+      url: feedUrl,
+      channel: "latest",
+    });
+    channelLabel = feedUrl;
+  }
+
   updater.logger = log;
   updater.autoDownload = true;
   updater.autoInstallOnAppQuit = true;
   updater.autoRunAppAfterInstall = true;
   updater.disableWebInstaller = true;
   updater.allowDowngrade = false;
-  updater.setFeedURL({ provider: "generic", url: feedUrl, channel: "latest" });
 
   log.initialize();
   log.transports.file.level = "info";
   log.info(
-    `[updater] Canal stable initialisé (${feedUrl}, version ${app.getVersion()})`,
+    `[updater] Canal stable initialisé (${channelLabel}, version ${app.getVersion()})`,
   );
 
   let state: DesktopUpdateState = {

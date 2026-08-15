@@ -44,7 +44,10 @@ export function parseGithubUpdateRepository(
     candidate = url.pathname.replace(/^\/+|\/+$/g, "");
   }
 
-  const segments = candidate.replace(/\.git$/i, "").split("/").filter(Boolean);
+  const segments = candidate
+    .replace(/\.git$/i, "")
+    .split("/")
+    .filter(Boolean);
   if (segments.length !== 2) {
     throw new Error(
       "Le dépôt de mise à jour doit être au format « owner/repo ».",
@@ -53,7 +56,9 @@ export function parseGithubUpdateRepository(
   const [owner, repo] = segments;
   const NAME = /^[A-Za-z0-9._-]+$/;
   if (!NAME.test(owner) || !NAME.test(repo)) {
-    throw new Error("Le dépôt de mise à jour contient des caractères invalides.");
+    throw new Error(
+      "Le dépôt de mise à jour contient des caractères invalides.",
+    );
   }
   return { owner, repo };
 }

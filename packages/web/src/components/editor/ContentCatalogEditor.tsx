@@ -10,6 +10,8 @@ import {
 
 type ContentKind = CatalogContentKind;
 type Provider = "modrinth" | "curseforge";
+/** Périmètre de recherche : les deux catalogues à la fois, ou un seul. */
+type SearchScope = "all" | Provider;
 
 interface CatalogResult {
   provider: Provider;
@@ -52,7 +54,7 @@ export default function ContentCatalogEditor({
   onChange: (kind: ContentKind, items: DownloadableFile[]) => void;
 }) {
   const [kind, setKind] = useState<ContentKind>("mod");
-  const [provider, setProvider] = useState<Provider>("modrinth");
+  const [scope, setScope] = useState<SearchScope>("all");
   const [curseForgeAvailable, setCurseForgeAvailable] = useState(false);
   const [providerStatusLoaded, setProviderStatusLoaded] = useState(false);
   const [query, setQuery] = useState("");
@@ -87,7 +89,7 @@ export default function ContentCatalogEditor({
     setResults([]);
     setSearchState("idle");
     setMessage("");
-  }, [kind, provider, minecraftVersion, loader]);
+  }, [kind, scope, minecraftVersion, loader]);
 
   useEffect(
     () => () => {
@@ -119,25 +121,52 @@ export default function ContentCatalogEditor({
     setSearchState("loading");
     setMessage("");
     try {
-      const params = new URLSearchParams({
-        provider,
-        kind,
-        query: normalized,
-        minecraftVersion,
-        loader,
-        limit: "12",
-      });
-      const response = await fetch(`/api/content-catalog/search?${params}`, {
-        signal: controller.signal,
-      });
-      const body = (await response.json().catch(() => null)) as {
-        results?: CatalogResult[];
-        error?: string;
-      } | null;
-      if (!response.ok) {
-        throw new Error(body?.error ?? "Recherche impossible.");
+      // « Tout » interroge les catalogues disponibles en parallèle : une panne
+      // ou une absence de clé sur l'un n'empêche pas d'afficher l'autre.
+      const providers: Provider[] =
+        scope === "all"
+          ? curseForgeAvailable
+            ? ["modrinth", "curseforge"]
+            : ["modrinth"]
+          : [scope];
+
+      const settled = await Promise.allSettled(
+        providers.map(async (entry) => {
+          const params = new URLSearchParams({
+            provider: entry,
+            kind,
+            query: normalized,
+            minecraftVersion,
+            loader,
+            limit: "12",
+          });
+          const response = await fetch(
+            `/api/content-catalog/search?${params}`,
+            { signal: controller.signal },
+          );
+          const body = (await response.json().catch(() => null)) as {
+            results?: CatalogResult[];
+            error?: string;
+          } | null;
+          if (!response.ok) {
+            throw new Error(body?.error ?? "Recherche impossible.");
+          }
+          return body?.results ?? [];
+        }),
+      );
+
+      const failures = settled.filter((entry) => entry.status === "rejected");
+      if (failures.length === providers.length) {
+        const reason = failures[0];
+        throw reason.status === "rejected"
+          ? (reason.reason as Error)
+          : new Error("Recherche impossible.");
       }
-      const next = body?.results ?? [];
+
+      // Les plus téléchargés d'abord, toutes plateformes confondues.
+      const next = settled
+        .flatMap((entry) => (entry.status === "fulfilled" ? entry.value : []))
+        .sort((a, b) => b.downloads - a.downloads);
       setResults(next);
       setSearchState("idle");
       setMessage(
@@ -316,18 +345,28 @@ export default function ContentCatalogEditor({
 
       <div className="catalog-provider-row" aria-label="Source du catalogue">
         <button
-          className={provider === "modrinth" ? "active" : ""}
+          className={scope === "all" ? "active" : ""}
           type="button"
-          onClick={() => setProvider("modrinth")}
+          onClick={() => setScope("all")}
+        >
+          Tout
+          <small>
+            {curseForgeAvailable ? "Modrinth + CurseForge" : "Modrinth"}
+          </small>
+        </button>
+        <button
+          className={scope === "modrinth" ? "active" : ""}
+          type="button"
+          onClick={() => setScope("modrinth")}
         >
           Modrinth
           <small>sans clé</small>
         </button>
         <button
-          className={provider === "curseforge" ? "active" : ""}
+          className={scope === "curseforge" ? "active" : ""}
           type="button"
           disabled={!providerStatusLoaded || !curseForgeAvailable}
-          onClick={() => setProvider("curseforge")}
+          onClick={() => setScope("curseforge")}
         >
           CurseForge
           <small>
@@ -344,7 +383,13 @@ export default function ContentCatalogEditor({
         <div className="field">
           <label htmlFor="catalog-query">
             Rechercher dans{" "}
-            {provider === "modrinth" ? "Modrinth" : "CurseForge"}
+            {scope === "all"
+              ? curseForgeAvailable
+                ? "Modrinth et CurseForge"
+                : "Modrinth"
+              : scope === "modrinth"
+                ? "Modrinth"
+                : "CurseForge"}
           </label>
           <div className="catalog-search-row">
             <input

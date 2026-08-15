@@ -25,6 +25,17 @@ function bundledSignedUpdateFeedUrl(): string {
   return process.env.JACH_SIGNED_UPDATE_FEED_URL?.trim() ?? "";
 }
 
+/**
+ * Dépôt GitHub publiant les releases du launcher (`owner/repo`). Renseigné par
+ * défaut sur le dépôt du projet : les mises à jour fonctionnent sans variable
+ * d'environnement, et restent surchargeables pour les forks.
+ */
+function bundledUpdateGithubRepository(): string {
+  return (
+    process.env.JACH_UPDATE_GITHUB_REPO?.trim() ?? "MatisseAD/JachLauncher"
+  );
+}
+
 export default defineConfig({
   main: {
     // Les dépendances Node/XMCL restent externes ; @jach/shared est bundlé afin
@@ -36,6 +47,9 @@ export default defineConfig({
       __JACH_AZURE_CLIENT_ID__: JSON.stringify(bundledAzureClientId()),
       __JACH_SIGNED_UPDATE_FEED_URL__: JSON.stringify(
         bundledSignedUpdateFeedUrl(),
+      ),
+      __JACH_UPDATE_GITHUB_REPO__: JSON.stringify(
+        bundledUpdateGithubRepository(),
       ),
     },
     build: {
