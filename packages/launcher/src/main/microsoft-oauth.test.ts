@@ -73,11 +73,38 @@ describe("Microsoft OAuth PKCE", () => {
 
     expect(callbackError).toBeInstanceOf(Error);
     const message = (callbackError as Error).message;
-    expect(message).toBe("Microsoft OAuth a refusé la demande (AADSTS50020).");
+    expect(message).toBe(
+      "Microsoft OAuth a refusé la demande (unauthorized_client, AADSTS50020).",
+    );
     expect(classifyMicrosoftAuthError(message)).toMatch(/audience/);
     expect(message).not.toContain("alice@example.invalid");
     expect(message).not.toContain("secret-token");
     expect(message).not.toContain("must not leak");
+  });
+
+  it("conserve access_denied lorsqu'un code AADSTS accompagne l'annulation", () => {
+    const state = createOAuthState();
+    const callbackUrl = new URL("http://localhost/");
+    callbackUrl.searchParams.set("state", state);
+    callbackUrl.searchParams.set("error", "access_denied");
+    callbackUrl.searchParams.set(
+      "error_description",
+      "AADSTS65004: User declined consent for alice@example.invalid",
+    );
+
+    let callbackError: unknown;
+    try {
+      parseMicrosoftOAuthCallback(callbackUrl, state);
+    } catch (error) {
+      callbackError = error;
+    }
+
+    const message = (callbackError as Error).message;
+    expect(message).toBe(
+      "Microsoft OAuth a refusé la demande (access_denied, AADSTS65004).",
+    );
+    expect(classifyMicrosoftAuthError(message)).toMatch(/annulée/);
+    expect(message).not.toContain("alice@example.invalid");
   });
 
   it("ne propage aucun texte libre lorsque la description n'a pas de code AADSTS", () => {
@@ -123,6 +150,14 @@ describe("callback OAuth Microsoft loopback", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/complete");
     await expect(callback.waitForCode).resolves.toBe("one-time-code");
+
+    const repeatedInvalidCallback = await fetch(
+      `${callback.redirectUri}/?code=must-not-win&state=wrong-state`,
+      { redirect: "manual" },
+    );
+    expect(repeatedInvalidCallback.status).toBe(303);
+    expect(repeatedInvalidCallback.headers.get("location")).toBe("/complete");
+    expect(await repeatedInvalidCallback.text()).toBe("");
 
     // Même si MSAL termine immédiatement l'échange du code, close() laisse au
     // navigateur le temps de charger la page finale au lieu d'afficher ERR_CONNECTION_REFUSED.
@@ -202,7 +237,7 @@ describe("callback OAuth Microsoft loopback", () => {
     const callbackError = await rejected;
     expect(callbackError).toMatchObject({ code: "oauth_error" });
     expect((callbackError as Error).message).toBe(
-      "Microsoft OAuth a refusé la demande (AADSTS50020).",
+      "Microsoft OAuth a refusé la demande (unauthorized_client, AADSTS50020).",
     );
 
     const completion = await fetch(`${callback.redirectUri}${location}`);
@@ -235,7 +270,14 @@ describe("callback OAuth Microsoft loopback", () => {
     );
     controller.abort();
     await expect(cancelledResult).resolves.toMatchObject({ code: "cancelled" });
-    await cancelled.close();
+    await expect(
+      Promise.race([
+        cancelled.close().then(() => "closed"),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("delayed"), 500),
+        ),
+      ]),
+    ).resolves.toBe("closed");
 
     const timedOut = await createMicrosoftLoopbackCallback({
       expectedState: createOAuthState(),
@@ -244,6 +286,13 @@ describe("callback OAuth Microsoft loopback", () => {
     await expect(timedOut.waitForCode).rejects.toMatchObject({
       code: "timeout",
     });
-    await timedOut.close();
+    await expect(
+      Promise.race([
+        timedOut.close().then(() => "closed"),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("delayed"), 500),
+        ),
+      ]),
+    ).resolves.toBe("closed");
   });
 });

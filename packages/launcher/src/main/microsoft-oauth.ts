@@ -146,7 +146,7 @@ export function parseMicrosoftOAuthCallback(
     );
     throw new MicrosoftOAuthCallbackError(
       "oauth_error",
-      `Microsoft OAuth a refusé la demande (${aadErrorCode ?? safeError}).`,
+      `Microsoft OAuth a refusé la demande (${safeError}${aadErrorCode ? `, ${aadErrorCode}` : ""}).`,
     );
   }
 
@@ -301,6 +301,27 @@ export async function createMicrosoftLoopbackCallback(options: {
     settled = true;
     resolveCode(code);
   };
+  const claimCompletionStatus = (
+    status: NonNullable<typeof completionStatus>,
+  ): boolean => {
+    // Le premier callback terminal est immuable. `settled` protège aussi le
+    // cas où une annulation ou un timeout externe a déjà terminé l'attente :
+    // ces fins externes ne doivent pas activer la grâce navigateur de 10 s.
+    if (settled || completionStatus !== null) return false;
+    completionStatus = status;
+    return true;
+  };
+
+  const redirectToCompletion = (
+    response: ServerResponse,
+    status: NonNullable<typeof completionStatus>,
+  ): void => {
+    response.writeHead(303, {
+      ...pageHeaders(pageNonce),
+      Location: status === "success" ? "/complete" : "/complete/error",
+    });
+    response.end();
+  };
 
   let redirectUri = "http://localhost";
   const pageNonce = crypto.randomBytes(18).toString("base64");
@@ -401,18 +422,24 @@ export async function createMicrosoftLoopbackCallback(options: {
       return;
     }
 
+    // Un rechargement, une répétition réseau ou une requête loopback parasite
+    // après le premier callback ne peut plus modifier son résultat.
+    if (completionStatus !== null) {
+      redirectToCompletion(response, completionStatus);
+      return;
+    }
+
     try {
       const { code } = parseMicrosoftOAuthCallback(callbackUrl, expectedState);
-      completionStatus = "success";
+      if (!claimCompletionStatus("success")) {
+        redirectToCompletion(response, completionStatus ?? "error");
+        return;
+      }
       // Le code est retiré immédiatement de la barre d'adresse/historique.
-      response.writeHead(303, {
-        ...pageHeaders(pageNonce),
-        Location: "/complete",
-      });
       // Le 303 est mis en file avant que le code soit remis à MSAL. La grâce
       // appliquée par close() garde ensuite /complete disponible même si
       // l'échange du code est très rapide.
-      response.end();
+      redirectToCompletion(response, "success");
       settleCode(code);
     } catch (error) {
       const safeError =
@@ -422,15 +449,14 @@ export async function createMicrosoftLoopbackCallback(options: {
               "invalid_callback",
               "Callback Microsoft invalide.",
             );
-      completionStatus = "error";
+      if (!claimCompletionStatus("error")) {
+        redirectToCompletion(response, completionStatus ?? "error");
+        return;
+      }
       // Ne rends jamais de page sur l'URL OAuth brute : elle peut contenir
       // error_description, state ou d'autres paramètres sensibles. Seul ce
       // chemin local constant est exposé dans la barre d'adresse et l'historique.
-      response.writeHead(303, {
-        ...pageHeaders(pageNonce),
-        Location: "/complete/error",
-      });
-      response.end();
+      redirectToCompletion(response, "error");
       settleError(safeError);
     }
   };
