@@ -180,6 +180,12 @@ export async function exchangeMicrosoftTokenForMinecraft(
     signal?: AbortSignal;
     onProgress?: (stage: string) => void;
     fetchImpl?: FetchLike;
+    /**
+     * Préfixe du RpsTicket Xbox. Les jetons Azure AD (MSAL) exigent `d=`,
+     * tandis que les jetons MSA hérités (login.live.com) doivent être envoyés
+     * bruts. Voir microsoft-legacy-auth.ts.
+     */
+    rpsTicketPrefix?: string;
   } = {},
 ): Promise<MinecraftAuthorization> {
   if (!microsoftAccessToken) {
@@ -195,7 +201,7 @@ export async function exchangeMicrosoftTokenForMinecraft(
       Properties: {
         AuthMethod: "RPS",
         SiteName: "user.auth.xboxlive.com",
-        RpsTicket: `d=${microsoftAccessToken}`,
+        RpsTicket: `${options.rpsTicketPrefix ?? "d="}${microsoftAccessToken}`,
       },
       RelyingParty: "http://auth.xboxlive.com",
       TokenType: "JWT",

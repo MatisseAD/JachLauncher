@@ -13,6 +13,10 @@ import {
 import { MicrosoftAuthLifecycle } from "./microsoft-auth-lifecycle";
 import { exchangeMicrosoftTokenForMinecraft } from "./microsoft-xbox";
 import {
+  redeemLegacyAuthCode,
+  requestLegacyAuthCode,
+} from "./microsoft-legacy-auth";
+import {
   createEncryptedMsalCachePlugin,
   EncryptedTokenCacheStore,
   SecureTokenCacheError,
@@ -558,10 +562,58 @@ export function canCommitMicrosoftAuthorization(
   return !signal?.aborted && shouldCommit();
 }
 
+/**
+ * Mode d'authentification Microsoft.
+ * - `legacy` (défaut) : endpoints login.live.com avec l'identifiant public du
+ *   launcher Minecraft officiel, déjà autorisé par Mojang. Aucune approbation
+ *   d'inscription Azure n'est nécessaire.
+ * - `msal` : flux Azure AD / MSAL avec l'inscription Azure du projet. Il exige
+ *   que l'application soit approuvée par Mojang pour l'API Minecraft.
+ */
+export function resolveMicrosoftAuthMode(
+  raw: string | undefined = process.env.JACH_AUTH_MODE,
+): "legacy" | "msal" {
+  return raw?.trim().toLowerCase() === "msal" ? "msal" : "legacy";
+}
+
+/**
+ * Flux hérité : la chaîne Xbox/XSTS/Minecraft reste celle, déjà testée, de
+ * `microsoft-xbox.ts`. Seule l'obtention du jeton Microsoft change, et le
+ * RpsTicket est envoyé brut (les jetons MSA n'utilisent pas le préfixe `d=`).
+ */
+async function performLegacyMicrosoftLogin(
+  signal: AbortSignal,
+  onProgress?: (stage: string) => void,
+): Promise<AuthResult> {
+  try {
+    const code = await requestLegacyAuthCode({ signal, onProgress });
+    onProgress?.("Échange du code Microsoft…");
+    const tokens = await redeemLegacyAuthCode(code, { signal });
+    const authorization = await exchangeMicrosoftTokenForMinecraft(
+      tokens.accessToken,
+      { signal, onProgress, rpsTicketPrefix: "" },
+    );
+    if (!canCommitMicrosoftAuthorization(signal, () => true)) {
+      return { ok: false, error: "Connexion Microsoft annulée." };
+    }
+    currentAuth = authorization;
+    return {
+      ok: true,
+      account: microsoftAuthorizationToAccount(authorization),
+    };
+  } catch (error) {
+    onProgress?.(`diagnostic brut : ${collectMicrosoftAuthDetail(error)}`);
+    return { ok: false, error: describeMicrosoftAuthError(error) };
+  }
+}
+
 async function performMicrosoftLogin(
   signal: AbortSignal,
   onProgress?: (stage: string) => void,
 ): Promise<AuthResult> {
+  if (resolveMicrosoftAuthMode() === "legacy") {
+    return performLegacyMicrosoftLogin(signal, onProgress);
+  }
   try {
     const { application, cacheStore } = await getMicrosoftClient();
     // Préflight explicite : jamais de connexion si le cache ne peut pas être
