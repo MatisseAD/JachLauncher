@@ -81,7 +81,7 @@ describe.sequential("content catalog", () => {
         expect(url.origin).toBe("https://api.modrinth.com");
         expect(url.pathname).toBe("/v2/search");
         expect(new Headers(init?.headers).get("user-agent")).toBe(
-          "YourLauncher/3.0.1 (https://yourlauncher.vercel.app)",
+          "YourLauncher-Web/0.1.0 (https://yourlauncher.vercel.app)",
         );
         expect(JSON.parse(url.searchParams.get("facets") ?? "[]")).toEqual([
           ["project_type:mod"],

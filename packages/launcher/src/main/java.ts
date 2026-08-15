@@ -2,11 +2,11 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { app } from "electron";
-import extractZip from "extract-zip";
 import * as tar from "tar";
 import type { LauncherManifest } from "@jach/shared";
 import type { LaunchProgress } from "../shared-types/ipc";
 import { assertSafeRemoteUrl } from "./security";
+import { extractZipSecurely } from "./secure-zip";
 
 type Emit = (progress: LaunchProgress) => void;
 type Log = (line: string) => void;
@@ -115,9 +115,25 @@ async function extractArchive(
   destination: string,
 ): Promise<void> {
   if (archive.endsWith(".zip")) {
-    await extractZip(archive, { dir: destination });
+    await extractZipSecurely(archive, destination);
   } else {
     await tar.x({ file: archive, cwd: destination });
+  }
+}
+
+/** Nettoie toute installation incomplète avant qu’elle puisse être mise en cache. */
+export async function installJavaArchive(
+  archive: string,
+  destination: string,
+): Promise<string> {
+  try {
+    await extractArchive(archive, destination);
+    const binary = await findJavaBinary(destination);
+    if (!binary) throw new Error("Binaire Java introuvable après extraction.");
+    return binary;
+  } catch (error) {
+    await fs.rm(destination, { recursive: true, force: true });
+    throw error;
   }
 }
 
@@ -186,13 +202,12 @@ async function downloadJava(
     percent: null,
   });
   log(`Extraction de Java ${major} (${(received / 1_048_576).toFixed(0)} Mo)…`);
+  let binary: string;
   try {
-    await extractArchive(archive, destination);
+    binary = await installJavaArchive(archive, destination);
   } finally {
     await fs.rm(archive, { force: true });
   }
-  const binary = await findJavaBinary(destination);
-  if (!binary) throw new Error("Binaire Java introuvable après extraction.");
   log(`Java ${major} installé : ${binary}`);
   return binary;
 }

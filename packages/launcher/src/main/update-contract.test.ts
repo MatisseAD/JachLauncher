@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   describeUpdaterError,
   validDesktopVersion,
@@ -10,6 +11,19 @@ const TEST_UPDATE_FEED_URL =
   "https://signed-updates.public.blob.vercel-storage.com/releases/windows";
 
 describe("contrat de mise à jour desktop", () => {
+  it("place l'éditeur Authenticode dans la configuration signtool attendue", () => {
+    const builderConfig = readFileSync(
+      new URL("../../electron-builder.config.cjs", import.meta.url),
+      "utf8",
+    );
+
+    expect(builderConfig).not.toContain("${env.JACH_WINDOWS_PUBLISHER_NAME}");
+    expect(builderConfig).toMatch(/signtoolOptions:\s*\{ publisherName \}/);
+    expect(builderConfig).toContain(
+      'forceCodeSigning: process.env.CI === "true"',
+    );
+  });
+
   it("n'accepte qu'un canal HTTPS sans identifiants ni paramètres", () => {
     expect(validateUpdateFeedUrl(`${TEST_UPDATE_FEED_URL}/`)).toBe(
       TEST_UPDATE_FEED_URL,

@@ -8,7 +8,7 @@ import {
   type ModLoader,
 } from "@jach/shared";
 import { z } from "zod";
-import launcherPackage from "../../../launcher/package.json";
+import webPackage from "../../package.json";
 
 const MODRINTH_API_ORIGIN = "https://api.modrinth.com";
 const CURSEFORGE_API_ORIGIN = "https://api.curseforge.com";
@@ -1283,7 +1283,7 @@ function curseForgeHeaders(apiKey: string): HeadersInit {
 }
 
 function catalogUserAgent(): string {
-  return `YourLauncher/${launcherPackage.version} (https://yourlauncher.vercel.app)`;
+  return `YourLauncher-Web/${webPackage.version} (https://yourlauncher.vercel.app)`;
 }
 
 export function createCurseForgeProxyUrl(
