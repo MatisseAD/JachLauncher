@@ -10,7 +10,11 @@ import { getLocale, getDict } from "@/i18n/server";
 import { getDictionary } from "@/i18n/dictionaries";
 import { I18nProvider } from "@/i18n/I18nProvider";
 
-const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
+// Client AdSense YourLauncher. Surchargeable par variable d'environnement,
+// mais embarqué par défaut afin que le script soit présent sur toutes les
+// pages (exigence de validation AdSense, cf. public/ads.txt).
+const ADSENSE_CLIENT =
+  process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "ca-pub-2402260558916344";
 
 export async function generateMetadata(): Promise<Metadata> {
   const dict = await getDict();

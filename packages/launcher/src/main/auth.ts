@@ -179,11 +179,18 @@ export function classifyMicrosoftAuthError(detail: string): string {
     return "Microsoft reconnaît le client ID, mais refuse le flux d'application de bureau publique (AADSTS7000218). Dans Azure, ajoute http://localhost sous « Applications mobiles et de bureau » ; si ce code persiste, vérifie aussi la configuration des flux de clients publics. Ce refus est distinct du type de compte choisi.";
   }
   if (
-    /\bAADSTS700016\b|\bAADSTS700011\b|application (?:with identifier )?.*(?:not found|was not found)|invalid[._ ]client/i.test(
+    /\bAADSTS700016\b|\bAADSTS700011\b|application (?:with identifier )?.*(?:not found|was not found)/i.test(
       detail,
     )
   ) {
     return "Configuration Microsoft invalide (AADSTS700016/invalid_client) : le client ID embarqué ne correspond pas à l'inscription Azure attendue ou n'est pas visible depuis l'autorité consumers.";
+  }
+  // `invalid_client` sans code AADSTS explicite : Microsoft reconnaît le client
+  // ID mais refuse l'échange. Sur un client public de bureau, la cause quasi
+  // systématique est la configuration de l'inscription (flux public désactivé
+  // ou URI de redirection loopback absente), pas l'identifiant lui-même.
+  if (/invalid[._ ]client/i.test(detail)) {
+    return "Microsoft reconnaît le client ID mais refuse l'échange (invalid_client). Dans Azure : active « Allow public client flows » et ajoute http://localhost sous « Applications mobiles et de bureau ».";
   }
   if (/\bAADSTS50020\b/i.test(detail)) {
     return "Microsoft a refusé ce compte (AADSTS50020), une erreur qui peut avoir plusieurs causes. Vérifie que tu as choisi un compte Microsoft personnel, puis que l'audience de l'inscription autorise les comptes personnels et que le launcher utilise bien l'autorité consumers.";
@@ -245,12 +252,17 @@ export function classifyMicrosoftAuthError(detail: string): string {
   return "La connexion Microsoft a échoué. Vérifie Internet, le profil Xbox et la licence Minecraft: Java Edition, puis réessaie.";
 }
 
-function describeMicrosoftAuthError(error: unknown): string {
+/**
+ * Détail technique brut (déjà expurgé) de l'erreur Microsoft. Il n'est jamais
+ * affiché à l'utilisateur : il sert uniquement au journal local, sans quoi le
+ * vrai code AADSTS reste invisible pour diagnostiquer une inscription Azure.
+ */
+export function collectMicrosoftAuthDetail(error: unknown): string {
   const shape =
     typeof error === "object" && error !== null
       ? (error as AuthErrorShape)
       : undefined;
-  const safeDetails = [
+  return [
     typeof error === "string" ? error : "",
     typeof shape?.code === "string" ? shape.code : "",
     typeof shape?.errorCode === "string" ? shape.errorCode : "",
@@ -261,9 +273,14 @@ function describeMicrosoftAuthError(error: unknown): string {
     typeof shape?.response?.status === "number"
       ? `HTTP ${shape.response.status}`
       : "",
-  ];
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function describeMicrosoftAuthError(error: unknown): string {
   // Aucun corps HTTP, URL de callback, code ou jeton n'est propagé au renderer.
-  return classifyMicrosoftAuthError(safeDetails.filter(Boolean).join(" "));
+  return classifyMicrosoftAuthError(collectMicrosoftAuthDetail(error));
 }
 
 export function assertSafeMicrosoftAuthorizationUrl(value: string): string {
@@ -578,6 +595,9 @@ async function performMicrosoftLogin(
       },
     });
   } catch (error) {
+    // Journalise le code exact renvoyé par Microsoft : le message affiché est
+    // volontairement pédagogique et masque le code technique.
+    onProgress?.(`diagnostic brut : ${collectMicrosoftAuthDetail(error)}`);
     return { ok: false, error: describeMicrosoftAuthError(error) };
   }
 }

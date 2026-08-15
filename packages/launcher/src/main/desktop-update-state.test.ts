@@ -17,17 +17,17 @@ describe("visibilité de la mise à jour desktop", () => {
     expect(
       shouldShowDesktopUpdate({
         status: "error",
-        version: "3.0.2",
+        version: "3.0.3",
         requiresUpdate: true,
       }),
     ).toBe(true);
     expect(
-      shouldShowDesktopUpdate({ status: "available", version: "3.0.2" }),
+      shouldShowDesktopUpdate({ status: "available", version: "3.0.3" }),
     ).toBe(true);
     expect(
-      shouldShowDesktopUpdate({ status: "downloading", version: "3.0.2" }),
+      shouldShowDesktopUpdate({ status: "downloading", version: "3.0.3" }),
     ).toBe(true);
-    expect(shouldShowDesktopUpdate({ status: "ready", version: "3.0.2" })).toBe(
+    expect(shouldShowDesktopUpdate({ status: "ready", version: "3.0.3" })).toBe(
       true,
     );
   });

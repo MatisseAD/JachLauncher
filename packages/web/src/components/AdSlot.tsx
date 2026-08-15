@@ -20,7 +20,8 @@ declare global {
   }
 }
 
-const CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
+const CLIENT =
+  process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "ca-pub-2402260558916344";
 
 export default function AdSlot({
   slot,

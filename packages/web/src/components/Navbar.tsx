@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { getDict, getLocale } from "@/i18n/server";
 import { getMarketingCopy } from "@/i18n/marketing-content";
+import { getWhyCopy } from "@/i18n/why-content";
 import LanguageSwitcher from "./LanguageSwitcher";
 import LogoMark from "./LogoMark";
 import UiIcon from "./UiIcon";
@@ -13,6 +14,7 @@ export default async function Navbar() {
     getLocale(),
   ]);
   const copy = getMarketingCopy(locale);
+  const why = getWhyCopy(locale);
 
   return (
     <header className="navbar">
@@ -24,6 +26,9 @@ export default async function Navbar() {
         <nav className="public-nav" aria-label="Navigation principale">
           <Link href="/#features" className="navlink">
             {t.nav.features}
+          </Link>
+          <Link href="/why" className="navlink">
+            {why.kicker}
           </Link>
           <Link href="/#examples" className="navlink">
             {copy.examples}

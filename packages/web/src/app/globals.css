@@ -5475,3 +5475,150 @@ button.choice {
     gap: 8px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Page vitrine « Pourquoi YourLauncher » (/why)
+   --------------------------------------------------------------------------- */
+.why-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 64px;
+}
+.why-hero {
+  text-align: center;
+  padding-top: 24px;
+}
+.why-hero h1 {
+  font-size: clamp(30px, 5vw, 50px);
+  line-height: 1.08;
+  margin: 14px 0 16px;
+}
+.why-accent {
+  background: var(--brand-grad, linear-gradient(120deg, #7c3aed, #a78bfa));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.why-hero > p {
+  max-width: 640px;
+  margin: 0 auto;
+  color: var(--text-dim);
+  font-size: 17px;
+}
+.why-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 26px;
+}
+.why-section h2 {
+  font-size: clamp(23px, 3vw, 31px);
+  margin: 0 0 8px;
+  text-align: center;
+}
+.why-intro {
+  text-align: center;
+  color: var(--text-dim);
+  max-width: 620px;
+  margin: 0 auto 28px;
+}
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 18px;
+}
+.why-card {
+  background: linear-gradient(
+    180deg,
+    var(--panel, #181128),
+    var(--bg-2, #110c1e)
+  );
+  border: 1px solid var(--border, rgba(168, 130, 255, 0.12));
+  border-radius: 16px;
+  padding: 22px;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+.why-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-strong, rgba(168, 130, 255, 0.3));
+}
+.why-card-icon {
+  font-size: 26px;
+  display: block;
+  margin-bottom: 10px;
+}
+.why-card h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.why-card p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.why-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border, rgba(168, 130, 255, 0.12));
+  border-radius: 16px;
+}
+.why-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+}
+.why-table th,
+.why-table td {
+  padding: 14px 18px;
+  text-align: left;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border, rgba(168, 130, 255, 0.12));
+}
+.why-table tbody tr:last-child th,
+.why-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.why-table thead th {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.why-table tbody th {
+  font-weight: 600;
+  color: var(--text);
+}
+.why-table .why-us {
+  color: var(--brand, #8b5cf6);
+  font-weight: 600;
+}
+.why-table .why-other {
+  color: var(--text-dim);
+}
+.why-final {
+  text-align: center;
+  padding: 44px 24px;
+  border-radius: 20px;
+  border: 1px solid var(--border, rgba(168, 130, 255, 0.12));
+  background:
+    radial-gradient(
+      600px 240px at 50% 0%,
+      rgba(139, 92, 246, 0.16),
+      transparent 70%
+    ),
+    linear-gradient(180deg, var(--panel, #181128), var(--bg-2, #110c1e));
+}
+.why-final h2 {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3vw, 30px);
+}
+.why-final p {
+  color: var(--text-dim);
+  margin: 0 0 22px;
+}
