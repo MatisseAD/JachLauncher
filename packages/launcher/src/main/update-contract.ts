@@ -2,12 +2,61 @@ const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 declare const __JACH_SIGNED_UPDATE_FEED_URL__: string | undefined;
+declare const __JACH_UPDATE_GITHUB_REPO__: string | undefined;
 
 export const WINDOWS_UPDATE_FEED_URL =
   (typeof __JACH_SIGNED_UPDATE_FEED_URL__ === "string"
     ? __JACH_SIGNED_UPDATE_FEED_URL__
     : process.env.JACH_SIGNED_UPDATE_FEED_URL
   )?.trim() ?? "";
+
+/** Dépôt GitHub publiant les releases du launcher, au format `owner/repo`. */
+export const UPDATE_GITHUB_REPOSITORY =
+  (typeof __JACH_UPDATE_GITHUB_REPO__ === "string"
+    ? __JACH_UPDATE_GITHUB_REPO__
+    : process.env.JACH_UPDATE_GITHUB_REPO
+  )?.trim() ?? "";
+
+export interface GithubUpdateFeed {
+  owner: string;
+  repo: string;
+}
+
+/**
+ * Analyse `owner/repo` (ou une URL GitHub complète) et renvoie le dépôt.
+ * Renvoie `null` si rien n'est configuré, lève si la valeur est mal formée :
+ * une release ne doit jamais être cherchée sur un dépôt approximatif.
+ */
+export function parseGithubUpdateRepository(
+  input: string = UPDATE_GITHUB_REPOSITORY,
+): GithubUpdateFeed | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  let candidate = raw;
+  if (/^https?:\/\//i.test(raw)) {
+    const url = new URL(raw);
+    if (url.hostname !== "github.com") {
+      throw new Error(
+        "Le dépôt de mise à jour doit être hébergé sur github.com.",
+      );
+    }
+    candidate = url.pathname.replace(/^\/+|\/+$/g, "");
+  }
+
+  const segments = candidate.replace(/\.git$/i, "").split("/").filter(Boolean);
+  if (segments.length !== 2) {
+    throw new Error(
+      "Le dépôt de mise à jour doit être au format « owner/repo ».",
+    );
+  }
+  const [owner, repo] = segments;
+  const NAME = /^[A-Za-z0-9._-]+$/;
+  if (!NAME.test(owner) || !NAME.test(repo)) {
+    throw new Error("Le dépôt de mise à jour contient des caractères invalides.");
+  }
+  return { owner, repo };
+}
 
 export function validateUpdateFeedUrl(input: string): string {
   if (!input.trim()) {
