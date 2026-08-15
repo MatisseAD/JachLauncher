@@ -92,11 +92,34 @@ export function verifyOAuthState(expected: string, received: string): boolean {
   );
 }
 
+const SAFE_OAUTH_ERRORS = new Set([
+  "access_denied",
+  "consent_required",
+  "interaction_required",
+  "invalid_grant",
+  "invalid_request",
+  "invalid_scope",
+  "login_required",
+  "server_error",
+  "temporarily_unavailable",
+  "unauthorized_client",
+  "unsupported_response_type",
+  "user_cancelled",
+]);
+
 function safeOAuthError(error: string | null): string {
-  const normalized = (error ?? "oauth_error")
-    .replace(/[^a-zA-Z0-9_.-]/g, "_")
-    .slice(0, 80);
-  return normalized || "oauth_error";
+  const normalized = error?.trim().toLowerCase() ?? "";
+  return SAFE_OAUTH_ERRORS.has(normalized) ? normalized : "oauth_error";
+}
+
+/**
+ * Les descriptions OAuth peuvent contenir l'adresse du compte et d'autres
+ * détails sensibles. Seul le code AADSTS documenté est conservé afin que le
+ * classifieur puisse distinguer les erreurs sans exposer le texte distant.
+ */
+function safeAadErrorCode(description: string | null): string | null {
+  const match = description?.match(/\bAADSTS(\d{5,8})\b/i);
+  return match ? `AADSTS${match[1]}` : null;
 }
 
 /**
@@ -117,9 +140,13 @@ export function parseMicrosoftOAuthCallback(
 
   const oauthError = callbackUrl.searchParams.get("error");
   if (oauthError) {
+    const safeError = safeOAuthError(oauthError);
+    const aadErrorCode = safeAadErrorCode(
+      callbackUrl.searchParams.get("error_description"),
+    );
     throw new MicrosoftOAuthCallbackError(
       "oauth_error",
-      `Microsoft OAuth a refusé la demande (${safeOAuthError(oauthError)}).`,
+      `Microsoft OAuth a refusé la demande (${aadErrorCode ?? safeError}).`,
     );
   }
 
@@ -159,7 +186,7 @@ function renderPage(
   closeable = false,
 ): string {
   const closeControl = closeable
-    ? `<button id="close" type="button">Fermer cet onglet</button><p id="close-help" class="help">Si le navigateur bloque la fermeture automatique, ferme simplement cet onglet.</p><script nonce="${nonce}">history.replaceState(null,"","/complete");const button=document.getElementById("close");const closePage=()=>{window.close();document.getElementById("close-help").textContent="Tu peux maintenant fermer cet onglet et revenir dans YourLauncher."};button.addEventListener("click",closePage);setTimeout(closePage,900);</script>`
+    ? `<button id="close" type="button">Fermer cet onglet</button><p id="close-help" class="help">Si le navigateur bloque la fermeture automatique, ferme simplement cet onglet.</p><script nonce="${nonce}">const button=document.getElementById("close");const closePage=()=>{window.close();document.getElementById("close-help").textContent="Tu peux maintenant fermer cet onglet et revenir dans YourLauncher."};button.addEventListener("click",closePage);setTimeout(closePage,900);</script>`
     : "";
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><style nonce="${nonce}">body{font-family:system-ui,sans-serif;background:#0b0814;color:#f6f2ff;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:32rem;padding:2rem;border:1px solid #493870;border-radius:1rem;background:#171126}h1{font-size:1.35rem}p{color:#cfc5e8;line-height:1.5}button{appearance:none;border:0;border-radius:.65rem;background:#8b5cf6;color:white;font:inherit;font-weight:700;padding:.75rem 1rem;cursor:pointer}.help{font-size:.85rem}</style></head><body><main class="card"><h1>${title}</h1><p>${detail}</p>${closeControl}</main></body></html>`;
 }
@@ -253,7 +280,7 @@ export async function createMicrosoftLoopbackCallback(options: {
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
   let settled = false;
-  let codeAccepted = false;
+  let completionStatus: "success" | "error" | null = null;
   let completionPageServed = false;
   let resolveCompletionPage!: () => void;
   const completionPage = new Promise<void>((resolve) => {
@@ -310,7 +337,7 @@ export async function createMicrosoftLoopbackCallback(options: {
 
     const callbackUrl = new URL(request.url ?? "/", redirectUri);
     if (callbackUrl.pathname === "/complete") {
-      if (!codeAccepted) {
+      if (completionStatus !== "success") {
         reply(
           response,
           404,
@@ -336,6 +363,33 @@ export async function createMicrosoftLoopbackCallback(options: {
       );
       return;
     }
+    if (callbackUrl.pathname === "/complete/error") {
+      if (completionStatus !== "error") {
+        reply(
+          response,
+          404,
+          "Page introuvable",
+          "Aucune erreur de connexion Microsoft n'est en cours de finalisation.",
+          pageNonce,
+        );
+        return;
+      }
+      reply(
+        response,
+        200,
+        "Connexion non validée",
+        "La connexion Microsoft n'a pas été validée. Reviens dans YourLauncher pour consulter le diagnostic et réessayer.",
+        pageNonce,
+        {
+          closeable: true,
+          onFinished: () => {
+            completionPageServed = true;
+            resolveCompletionPage();
+          },
+        },
+      );
+      return;
+    }
     if (callbackUrl.pathname !== "/") {
       reply(
         response,
@@ -349,7 +403,7 @@ export async function createMicrosoftLoopbackCallback(options: {
 
     try {
       const { code } = parseMicrosoftOAuthCallback(callbackUrl, expectedState);
-      codeAccepted = true;
+      completionStatus = "success";
       // Le code est retiré immédiatement de la barre d'adresse/historique.
       response.writeHead(303, {
         ...pageHeaders(pageNonce),
@@ -361,21 +415,23 @@ export async function createMicrosoftLoopbackCallback(options: {
       response.end();
       settleCode(code);
     } catch (error) {
-      reply(
-        response,
-        400,
-        "Connexion non validée",
-        "Reviens dans YourLauncher et relance la connexion Microsoft.",
-        pageNonce,
-      );
-      settleError(
+      const safeError =
         error instanceof Error
           ? error
           : new MicrosoftOAuthCallbackError(
               "invalid_callback",
               "Callback Microsoft invalide.",
-            ),
-      );
+            );
+      completionStatus = "error";
+      // Ne rends jamais de page sur l'URL OAuth brute : elle peut contenir
+      // error_description, state ou d'autres paramètres sensibles. Seul ce
+      // chemin local constant est exposé dans la barre d'adresse et l'historique.
+      response.writeHead(303, {
+        ...pageHeaders(pageNonce),
+        Location: "/complete/error",
+      });
+      response.end();
+      settleError(safeError);
     }
   };
 
@@ -450,7 +506,7 @@ export async function createMicrosoftLoopbackCallback(options: {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", onAbort);
       for (const server of servers) server.off("error", onServerError);
-      if (codeAccepted && !completionPageServed) {
+      if (completionStatus !== null && !completionPageServed) {
         let graceTimeout: ReturnType<typeof setTimeout> | undefined;
         await Promise.race([
           completionPage,

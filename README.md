@@ -140,9 +140,9 @@ Le mode hors-ligne sert au développement et aux serveurs configurés pour
 l’accepter. Il ne prouve pas la propriété d’un compte Mojang/Microsoft.
 
 Pour Microsoft, crée une application Azure **publique** (aucun secret client)
-qui accepte les comptes Microsoft personnels. Dans **Authentification**, ajoute
-la plateforme **Applications mobiles et de bureau**, enregistre exactement
-`http://localhost` comme URI de redirection et active les flux de client public.
+avec **Comptes Microsoft personnels uniquement**. Dans **Authentification**,
+ajoute la plateforme **Applications mobiles et de bureau** et enregistre
+exactement `http://localhost` comme URI de redirection.
 Le launcher utilise MSAL Node, le navigateur système, un callback loopback
 éphémère, `state` et PKCE S256. Consulte
 [la configuration Azure détaillée](packages/launcher/MICROSOFT_AUTH.md), puis
@@ -157,18 +157,19 @@ npm run dev:launcher
 configurés avec ce nom. `JACH_AZURE_CLIENT_ID` reste le nom canonique et est
 prioritaire lorsque les deux variables existent.
 
-L’identifiant public actuellement configuré est embarqué dans le launcher. Les
-releases peuvent le remplacer depuis la variable Actions
-`JACH_AZURE_CLIENT_ID`, ou depuis l’alias `JACH_ID`. Le workflow refuse toute
-valeur qui n’est pas un GUID ; aucun secret OAuth n’est placé dans
-l’application. Le cache MSAL est chiffré avec le coffre-fort
+L’identifiant public de repli sert uniquement au développement local. Une
+distribution exige la Repository variable Actions `JACH_AZURE_CLIENT_ID`, ou
+son alias `JACH_ID`, au format GUID ; le workflow n'accepte aucun fallback et
+ignore volontairement les Actions secrets portant ces noms. Aucun secret OAuth
+n’est placé dans l’application. Le cache MSAL est chiffré avec le coffre-fort
 natif Electron `safeStorage`, restauré silencieusement au redémarrage et
 supprimé au logout.
 
-Le dépôt contient un ID d'application public par défaut ; les variables ci-dessus
-servent à le remplacer pour un autre environnement. Pour tout nouvel ID Azure,
+Le dépôt contient un ID d'application public de développement ; `package:win`
+ne l'utilise jamais automatiquement et exige que l'ID voulu soit fourni
+explicitement. Pour tout nouvel ID Azure,
 Mojang impose aussi une
-[demande d'accès aux API Java](https://help.minecraft.net/hc/en-us/articles/16254801392141) :
+[demande d'accès aux API Java](https://minecrafthelp.zendesk.com/hc/en-us/articles/16254801392141-Java-Edition-Game-Service-API-Review-or-Application-Process) :
 sans cette autorisation serveur, Microsoft et Xbox peuvent accepter la connexion
 avant que Minecraft Services ne refuse finalement le compte.
 

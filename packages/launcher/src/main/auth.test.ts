@@ -14,6 +14,8 @@ import {
   runMicrosoftAccountSwitchTransaction,
   selectUnambiguousMicrosoftAccount,
   setOfflineAccount,
+  MICROSOFT_AUTHORITY,
+  MICROSOFT_SCOPES,
   type MinecraftAuthorization,
 } from "./auth";
 import { SecureTokenCacheError } from "./secure-token-cache";
@@ -162,7 +164,8 @@ describe("authentification hors ligne", () => {
     ["error.gui.closed", /annulée/],
     ["JACH_AZURE_CLIENT_ID invalide : format GUID", /absent ou mal formé/],
     ["AADSTS50011 redirect_uri mismatch", /URI de redirection/],
-    ["AADSTS700016", /comptes Microsoft personnels/],
+    ["AADSTS700016", /client ID embarqué/],
+    ["AADSTS50020 personal Microsoft account", /plusieurs causes/],
     ["error.auth.xsts.userNotFound", /profil Xbox/],
     ["XErr 2148916238", /famille Microsoft/],
     ["error.auth.xsts.bannedCountry", /pays/],
@@ -170,10 +173,104 @@ describe("authentification hors ligne", () => {
       "MINECRAFT_APP_REGISTRATION_NOT_APPROVED HTTP 403",
       /pas encore autorisé par Mojang/,
     ],
-    ["error.auth.minecraft.profile NOT_FOUND", /licence Minecraft/],
+    ["MINECRAFT_JAVA_LICENSE_MISSING", /Aucune licence Minecraft/],
     ["MICROSOFT_MULTIPLE_ACCOUNTS", /Plusieurs sessions Microsoft/],
   ])("explique l'erreur Microsoft %s", (detail, expected) => {
     expect(classifyMicrosoftAuthError(detail)).toMatch(expected);
+  });
+
+  it("réserve le diagnostic de client public à AADSTS7000218", () => {
+    const message = classifyMicrosoftAuthError(
+      "invalid_client: AADSTS7000218: The request body must contain client_assertion or client_secret",
+    );
+
+    expect(message).toMatch(/application de bureau publique/);
+    expect(message).toMatch(/http:\/\/localhost/);
+    expect(message).toMatch(/distinct du type de compte/);
+  });
+
+  it.each([
+    "Microsoft OAuth a refusé la demande (unauthorized_client).",
+    "unauthorized_client: not configured to allow public clients",
+    "unauthorized_client: client_secret required",
+  ])("garde unauthorized_client générique sans code AADSTS (%s)", (detail) => {
+    const message = classifyMicrosoftAuthError(detail);
+
+    expect(message).toMatch(/sans préciser/);
+    expect(message).not.toMatch(/application de bureau publique/);
+    expect(message).not.toMatch(/flux de clients publics/);
+  });
+
+  it("présente AADSTS50020 comme une erreur à plusieurs causes", () => {
+    const message = classifyMicrosoftAuthError("AADSTS50020");
+
+    expect(message).toMatch(/plusieurs causes/);
+    expect(message).toMatch(/compte Microsoft personnel/);
+    expect(message).toMatch(/autorité consumers/);
+    expect(message).not.toMatch(/ne correspond pas/);
+  });
+
+  it("distingue une application désactivée d'un client introuvable", () => {
+    expect(classifyMicrosoftAuthError("AADSTS7000112")).toMatch(/désactivée/);
+    expect(classifyMicrosoftAuthError("AADSTS7000112")).not.toMatch(
+      /client ID embarqué/,
+    );
+    expect(classifyMicrosoftAuthError("AADSTS700011")).toMatch(
+      /client ID embarqué/,
+    );
+  });
+
+  it("respecte les frontières des codes AADSTS", () => {
+    expect(classifyMicrosoftAuthError("AADSTS500201")).not.toMatch(
+      /plusieurs causes/,
+    );
+    expect(classifyMicrosoftAuthError("AADSTS70002180")).not.toMatch(
+      /application de bureau publique/,
+    );
+  });
+
+  it.each([
+    "error.auth.minecraft.entitlements HTTP 401",
+    "MINECRAFT_ENTITLEMENTS_INVALID_RESPONSE HTTP 200",
+  ])(
+    "ne transforme pas un refus du service d'entitlements en absence de licence (%s)",
+    (detail) => {
+      const message = classifyMicrosoftAuthError(detail);
+
+      expect(message).toMatch(/n'a pas pu vérifier la licence/);
+      expect(message).not.toMatch(/Aucune licence/);
+    },
+  );
+
+  it("signale séparément une indisponibilité temporaire des entitlements", () => {
+    const message = classifyMicrosoftAuthError(
+      "error.auth.minecraft.entitlements HTTP 503",
+    );
+
+    expect(message).toMatch(/temporairement indisponible/);
+    expect(message).not.toMatch(/Aucune licence/);
+  });
+
+  it("réserve l'absence de licence au code métier explicite", () => {
+    expect(
+      classifyMicrosoftAuthError("MINECRAFT_JAVA_LICENSE_MISSING"),
+    ).toMatch(/Aucune licence Minecraft/);
+    expect(classifyMicrosoftAuthError("license request HTTP 503")).not.toMatch(
+      /Aucune licence Minecraft/,
+    );
+  });
+
+  it("inclut Minecraft dans le diagnostic réseau", () => {
+    expect(classifyMicrosoftAuthError("MICROSOFT_NETWORK_ERROR")).toMatch(
+      /Microsoft, Xbox ou Minecraft/,
+    );
+  });
+
+  it("conserve l'autorité consumers et les scopes Xbox du client personnel", () => {
+    expect(MICROSOFT_AUTHORITY).toBe(
+      "https://login.microsoftonline.com/consumers",
+    );
+    expect(MICROSOFT_SCOPES).toEqual(["XboxLive.signin", "offline_access"]);
   });
 
   it("n'autorise que l'endpoint consumers HTTPS de Microsoft", () => {

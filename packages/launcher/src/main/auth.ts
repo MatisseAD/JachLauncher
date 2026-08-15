@@ -27,7 +27,11 @@ const BUNDLED_AZURE_CLIENT_ID =
   typeof __JACH_AZURE_CLIENT_ID__ === "string"
     ? __JACH_AZURE_CLIENT_ID__
     : undefined;
-const MICROSOFT_AUTHORITY = "https://login.microsoftonline.com/consumers";
+// `consumers` limite volontairement le sélecteur aux comptes Microsoft
+// personnels (Xbox). Il doit rester cohérent avec le signInAudience de
+// l'inscription Azure.
+export const MICROSOFT_AUTHORITY =
+  "https://login.microsoftonline.com/consumers";
 export const MICROSOFT_SCOPES = ["XboxLive.signin", "offline_access"];
 const MSAL_CACHE_FILENAME = "microsoft-msal-cache.bin";
 
@@ -165,13 +169,34 @@ export function classifyMicrosoftAuthError(detail: string): string {
   ) {
     return "Configuration Microsoft invalide : le client ID Azure public de cette version est absent ou mal formé.";
   }
-  if (/AADSTS50011|reply url|redirect[_ ]uri|redirect URI/i.test(detail)) {
+  if (/\bAADSTS50011\b|reply url|redirect[_ ]uri|redirect URI/i.test(detail)) {
     return "Configuration Microsoft invalide : ajoute http://localhost aux URI de redirection « Applications mobiles et de bureau » dans Azure.";
   }
+  if (/\bAADSTS7000112\b/i.test(detail)) {
+    return "L'application Microsoft associée au client ID est désactivée (AADSTS7000112). L'administrateur doit la réactiver dans Microsoft Entra avant de réessayer.";
+  }
+  if (/\bAADSTS7000218\b/i.test(detail)) {
+    return "Microsoft reconnaît le client ID, mais refuse le flux d'application de bureau publique (AADSTS7000218). Dans Azure, ajoute http://localhost sous « Applications mobiles et de bureau » ; si ce code persiste, vérifie aussi la configuration des flux de clients publics. Ce refus est distinct du type de compte choisi.";
+  }
   if (
-    /AADSTS700016|AADSTS50194|invalid.client|unauthorized_client/i.test(detail)
+    /\bAADSTS700016\b|\bAADSTS700011\b|application (?:with identifier )?.*(?:not found|was not found)|invalid[._ ]client/i.test(
+      detail,
+    )
   ) {
-    return "Configuration Microsoft invalide : le client ID doit appartenir à une application Azure publique acceptant les comptes Microsoft personnels.";
+    return "Configuration Microsoft invalide (AADSTS700016/invalid_client) : le client ID embarqué ne correspond pas à l'inscription Azure attendue ou n'est pas visible depuis l'autorité consumers.";
+  }
+  if (/\bAADSTS50020\b/i.test(detail)) {
+    return "Microsoft a refusé ce compte (AADSTS50020), une erreur qui peut avoir plusieurs causes. Vérifie que tu as choisi un compte Microsoft personnel, puis que l'audience de l'inscription autorise les comptes personnels et que le launcher utilise bien l'autorité consumers.";
+  }
+  if (
+    /\bAADSTS50194\b|signInAudience|personal Microsoft accounts?.*(?:not supported|not allowed)|does not (?:accept|support|allow).*(?:personal|consumer)/i.test(
+      detail,
+    )
+  ) {
+    return "L'endpoint Microsoft ne correspond pas au type d'inscription (AADSTS50194). Pour Xbox, conserve « Comptes Microsoft personnels uniquement » avec l'autorité consumers.";
+  }
+  if (/\bunauthorized_client\b/i.test(detail)) {
+    return "Microsoft OAuth a refusé l'application (unauthorized_client), sans préciser quelle partie de l'inscription est en cause. Réessaie puis, si le refus persiste, contacte l'administrateur du launcher.";
   }
   if (/error\.auth\.xsts\.userNotFound|2148916233/i.test(detail)) {
     return "Ce compte Microsoft n'a pas encore de profil Xbox. Connecte-toi une fois sur xbox.com, crée ton gamertag puis réessaie.";
@@ -185,18 +210,24 @@ export function classifyMicrosoftAuthError(detail: string): string {
   if (/MINECRAFT_JAVA_PROFILE_MISSING/i.test(detail)) {
     return "La licence Java existe, mais aucun profil Minecraft n'est initialisé. Choisis d'abord un pseudo sur minecraft.net puis réessaie.";
   }
+  if (/\bMINECRAFT_JAVA_LICENSE_MISSING\b/i.test(detail)) {
+    return "Aucune licence Minecraft: Java Edition utilisable n'a été trouvée sur ce compte.";
+  }
   if (
-    /MINECRAFT_JAVA_LICENSE_MISSING|error\.auth\.minecraft\.entitlements|minecraft profile.*NOT_FOUND|license|licence/i.test(
+    /error\.auth\.minecraft\.entitlements|MINECRAFT_ENTITLEMENTS_(?:INVALID_RESPONSE|RESPONSE_TOO_LARGE)/i.test(
       detail,
     )
   ) {
-    return "Aucune licence Minecraft: Java Edition utilisable n'a été trouvée sur ce compte.";
+    if (/\bHTTP\s+(?:408|425|429|5\d{2})\b/i.test(detail)) {
+      return "Le service Minecraft de vérification des licences est temporairement indisponible. Réessaie plus tard ; les droits du compte n'ont pas pu être déterminés.";
+    }
+    return "Minecraft n'a pas pu vérifier la licence auprès de son service. Reconnecte le compte puis réessaie ; les droits du compte n'ont pas pu être déterminés.";
   }
   if (/error\.auth\.xboxLive|error\.auth\.xsts/i.test(detail)) {
     return "Xbox Live a refusé la connexion. Vérifie le profil Xbox et les autorisations familiales du compte.";
   }
   if (/MINECRAFT_APP_REGISTRATION_NOT_APPROVED/i.test(detail)) {
-    return "Microsoft et Xbox ont accepté le compte, mais ce client ID Azure n'est pas encore autorisé par Mojang pour les API Minecraft Java. Demande son ajout via la procédure officielle « Java Edition Game Service API Review » puis réessaie.";
+    return "Microsoft et Xbox ont accepté le compte, mais ce client ID Azure n'est pas encore autorisé par Mojang pour les API Minecraft Java. Demande son ajout sur https://aka.ms/mce-reviewappid puis réessaie.";
   }
   if (/interaction_required|consent_required|login_required/i.test(detail)) {
     return "La session Microsoft doit être renouvelée. Relance la connexion et valide la demande dans le navigateur.";
@@ -204,9 +235,11 @@ export function classifyMicrosoftAuthError(detail: string): string {
   if (
     /MICROSOFT_NETWORK_ERROR|network|fetch failed|ENOTFOUND|ECONN/i.test(detail)
   ) {
-    return "Les services Microsoft sont injoignables. Vérifie Internet, le pare-feu et l'heure de Windows, puis réessaie.";
+    return "Les services Microsoft, Xbox ou Minecraft sont injoignables. Vérifie Internet, le pare-feu et l'heure de Windows, puis réessaie.";
   }
-  if (/error\.auth\.microsoft|AADSTS|oauth|invalid_grant/i.test(detail)) {
+  if (
+    /error\.auth\.microsoft|\bAADSTS\d{5,8}\b|oauth|invalid_grant/i.test(detail)
+  ) {
     return "Microsoft a refusé la connexion. Relance-la dans le navigateur et, si le problème persiste, contacte l'administrateur du launcher.";
   }
   return "La connexion Microsoft a échoué. Vérifie Internet, le profil Xbox et la licence Minecraft: Java Edition, puis réessaie.";

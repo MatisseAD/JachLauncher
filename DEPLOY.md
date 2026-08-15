@@ -84,7 +84,7 @@ n’est supprimé ou marqué artificiellement comme migré.
 
 Les migrations incluent la console administrateur et les sessions de présence
 du client desktop. Elles doivent être appliquées avant de diffuser la version
-3.0.1 du launcher ; sinon la liste des clients ouverts/en jeu restera
+3.0.2 du launcher ; sinon la liste des clients ouverts/en jeu restera
 indisponible. Ces présences expirent automatiquement après 75 secondes sans
 heartbeat.
 
@@ -119,6 +119,22 @@ remplacement, et tout le namespace d'un launcher est purgé avec sa suppression.
 
 ## 6. Contrôles avant promotion
 
+### Configuration GitHub de la release desktop 3.0.2
+
+L'ID d'application Microsoft est public, mais sa valeur doit être fournie
+explicitement à chaque build de distribution. Dans le dépôt GitHub, ouvre
+**Settings** > **Secrets and variables** > **Actions** > onglet **Variables**,
+puis crée la **Repository variable** `JACH_AZURE_CLIENT_ID` avec l'ID
+d'application Azure au format GUID. L'ancien nom `JACH_ID` reste accepté comme
+alias ; si les deux existent, `JACH_AZURE_CLIENT_ID` est prioritaire.
+
+Ne place pas cet ID dans l'onglet **Secrets** : le workflow lit volontairement
+uniquement `vars.JACH_AZURE_CLIENT_ID` ou `vars.JACH_ID`. Un secret portant le
+même nom est ignoré et, sans Repository variable valide, le job s'arrête avant
+`npm ci` et avant tout build. Le fallback embarqué sert uniquement au
+développement local ; `package:win` et electron-builder refusent de produire
+un installateur sans ID explicite.
+
 ```bash
 npm ci
 npm run check
@@ -140,7 +156,7 @@ Vérifie ensuite :
 - un brouillon n’est visible publiquement ni par l’API ni par l’aperçu ;
 - la création de compte, la connexion, l’upload et la publication fonctionnent ;
 - `NEXT_PUBLIC_APP_URL` correspond exactement au domaine HTTPS final.
-- la console `/admin` voit un launcher 3.0.1 ouvert, puis son état `En jeu`, et
+- la console `/admin` voit un launcher 3.0.2 ouvert, puis son état `En jeu`, et
   les commandes d'arrêt/fermeture sont exécutées par le client officiel.
 - la recherche Modrinth fonctionne ; si `CURSEFORGE_API_KEY` est configurée,
   vérifie également un téléchargement CurseForge autorisé par son auteur.

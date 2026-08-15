@@ -4,8 +4,8 @@ import react from "@vitejs/plugin-react";
 
 const AZURE_CLIENT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// L'Application (client) ID OAuth est un identifiant public, pas un secret.
-// Les variables permettent de le remplacer par environnement sans modifier le code.
+// Repli réservé au développement local. electron-builder refuse tout
+// packaging de distribution sans JACH_AZURE_CLIENT_ID/JACH_ID explicite.
 const DEFAULT_PUBLIC_AZURE_CLIENT_ID = "cd01933b-3450-4beb-8c31-20fdb9c9ab43";
 
 function bundledAzureClientId(): string {

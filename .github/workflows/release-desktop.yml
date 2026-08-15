@@ -17,13 +17,27 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      # Nom canonique puis alias historique accepté à la demande du projet.
-      JACH_AZURE_CLIENT_ID: ${{ vars.JACH_AZURE_CLIENT_ID || vars.JACH_ID || 'cd01933b-3450-4beb-8c31-20fdb9c9ab43' }}
+      # Identifiant public lu exclusivement depuis les Repository variables.
+      # Un Actions secret du même nom est volontairement ignoré.
+      JACH_AZURE_CLIENT_ID: ${{ vars.JACH_AZURE_CLIENT_ID || vars.JACH_ID }}
       JACH_SIGNED_UPDATE_FEED_URL: ${{ vars.JACH_SIGNED_UPDATE_FEED_URL }}
       JACH_WINDOWS_PUBLISHER_NAME: ${{ vars.JACH_WINDOWS_PUBLISHER_NAME }}
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Validate Microsoft authentication configuration
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:JACH_AZURE_CLIENT_ID)) {
+            throw "Missing Microsoft client ID. In GitHub, open Settings > Secrets and variables > Actions > Variables, then create the Repository variable JACH_AZURE_CLIENT_ID (or legacy alias JACH_ID). An Actions secret is intentionally not read."
+          }
+          $clientId = $env:JACH_AZURE_CLIENT_ID.Trim()
+          if ($clientId -notmatch '\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\z') {
+            throw "Repository variable JACH_AZURE_CLIENT_ID (or JACH_ID) must be an Azure application ID in GUID format."
+          }
+          "JACH_AZURE_CLIENT_ID=$clientId" | Add-Content -LiteralPath $env:GITHUB_ENV
+          Write-Host "A non-secret Azure application ID was provided explicitly for this release."
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -74,14 +88,6 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:LEGACY_BLOB_READ_WRITE_TOKEN)) {
             throw "LEGACY_BLOB_READ_WRITE_TOKEN is required only for the configured bootstrap release."
           }
-
-      - name: Validate Microsoft authentication configuration
-        shell: pwsh
-        run: |
-          if ($env:JACH_AZURE_CLIENT_ID -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
-            throw "Repository variable JACH_AZURE_CLIENT_ID must be an Azure application ID in GUID format."
-          }
-          Write-Host "Azure must configure http://localhost under Mobile and desktop applications, with public client flows enabled and no client secret."
 
       - name: Install dependencies
         run: npm ci

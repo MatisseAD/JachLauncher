@@ -6,14 +6,16 @@ jamais recevoir de secret client.
 ## Inscription Azure
 
 1. Crée une inscription d'application qui accepte les **comptes Microsoft
-   personnels**. Le type de comptes doit être « Comptes Microsoft personnels
-   uniquement » ou « Comptes dans un annuaire organisationnel et comptes
-   Microsoft personnels » ; une application mono-tenant ne fonctionnera pas
-   avec l'autorité `consumers` du launcher.
+   personnels**. Pour Xbox, sélectionne précisément **« Comptes Microsoft
+   personnels uniquement »** (`signInAudience=PersonalMicrosoftAccount`) ; le
+   launcher utilise l'autorité `consumers` correspondante.
 2. Dans **Authentification** > **Ajouter une plateforme**, sélectionne
    **Applications mobiles et de bureau**.
 3. Ajoute exactement l'URI de redirection `http://localhost`.
-4. Active **Autoriser les flux de clients publics**.
+4. Le flux utilisé est Authorization Code + PKCE, sans secret. La plateforme
+   **Applications mobiles et de bureau** identifie déjà ce client public. Si
+   Azure renvoie `AADSTS7000218` ou `unauthorized_client`, active aussi
+   **Autoriser les flux de clients publics** dans les paramètres avancés.
 5. Copie uniquement l'**ID d'application (client)** au format GUID dans la
    variable Actions `JACH_AZURE_CLIENT_ID` ou dans la variable d'environnement
    locale du même nom. L'ancien nom `JACH_ID` est accepté comme alias, mais le
@@ -51,12 +53,17 @@ embarqué historique et n'est plus utilisé.
   enregistré sous une plateforme Web ou SPA, puis attends quelques minutes
   après l'enregistrement Azure.
 - `AADSTS700016` : le GUID ne correspond pas à l'inscription attendue.
-- `unauthorized_client` : le flux de client public ou les comptes personnels ne
-  sont pas autorisés.
+- `AADSTS7000218` : l'application est traitée comme un client confidentiel.
+  Vérifie la plateforme **Applications mobiles et de bureau**,
+  `http://localhost`, puis le réglage des flux de clients publics.
+- `unauthorized_client` sans code AADSTS plus précis : Microsoft ne précise pas
+  quelle partie de l'inscription est refusée ; réessaie avant de modifier sa
+  configuration.
 - `Invalid app registration` après le succès Microsoft/Xbox : les nouveaux IDs
   d'application doivent être examinés et ajoutés à la liste d'autorisation des
   API Java par Mojang. Suis la procédure officielle
-  [Java Edition Game Service API Review or Application Process](https://help.minecraft.net/hc/en-us/articles/16254801392141).
+  [Java Edition Game Service API Review or Application Process](https://minecrafthelp.zendesk.com/hc/en-us/articles/16254801392141-Java-Edition-Game-Service-API-Review-or-Application-Process)
+  ou ouvre directement [le formulaire d'examen](https://aka.ms/mce-reviewappid).
   Ce contrôle est côté Minecraft Services et ne peut pas être contourné dans le
   launcher.
 - profil Xbox absent / compte enfant : initialise le gamertag Xbox et, pour un

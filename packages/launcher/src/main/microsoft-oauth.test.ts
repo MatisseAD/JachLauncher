@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { classifyMicrosoftAuthError } from "./auth";
 import {
   createMicrosoftLoopbackCallback,
   createMicrosoftOAuthTransaction,
@@ -52,6 +53,47 @@ describe("Microsoft OAuth PKCE", () => {
       ),
     ).toThrow(/état de sécurité/i);
   });
+
+  it("transmet uniquement le code AADSTS sûr au classifieur", () => {
+    const state = createOAuthState();
+    const callbackUrl = new URL("http://localhost/");
+    callbackUrl.searchParams.set("state", state);
+    callbackUrl.searchParams.set("error", "unauthorized_client");
+    callbackUrl.searchParams.set(
+      "error_description",
+      "AADSTS50020: User account alice@example.invalid access_token=secret-token must not leak",
+    );
+
+    let callbackError: unknown;
+    try {
+      parseMicrosoftOAuthCallback(callbackUrl, state);
+    } catch (error) {
+      callbackError = error;
+    }
+
+    expect(callbackError).toBeInstanceOf(Error);
+    const message = (callbackError as Error).message;
+    expect(message).toBe("Microsoft OAuth a refusé la demande (AADSTS50020).");
+    expect(classifyMicrosoftAuthError(message)).toMatch(/audience/);
+    expect(message).not.toContain("alice@example.invalid");
+    expect(message).not.toContain("secret-token");
+    expect(message).not.toContain("must not leak");
+  });
+
+  it("ne propage aucun texte libre lorsque la description n'a pas de code AADSTS", () => {
+    const state = createOAuthState();
+    const callbackUrl = new URL("http://localhost/");
+    callbackUrl.searchParams.set("state", state);
+    callbackUrl.searchParams.set("error", "token-stolen-by-attacker");
+    callbackUrl.searchParams.set(
+      "error_description",
+      "Bearer very-secret-token for bob@example.invalid",
+    );
+
+    expect(() => parseMicrosoftOAuthCallback(callbackUrl, state)).toThrow(
+      "Microsoft OAuth a refusé la demande (oauth_error).",
+    );
+  });
 });
 
 describe("callback OAuth Microsoft loopback", () => {
@@ -94,7 +136,7 @@ describe("callback OAuth Microsoft loopback", () => {
     await closePromise;
   });
 
-  it("bloque le callback et ferme le serveur en cas de state invalide", async () => {
+  it("redirige aussi un state invalide vers une page locale propre", async () => {
     const callback = await createMicrosoftLoopbackCallback({
       expectedState: "expected-state",
       timeoutMs: 2_000,
@@ -105,8 +147,79 @@ describe("callback OAuth Microsoft loopback", () => {
       `${callback.redirectUri}/?code=never-returned&state=wrong-state`,
       { redirect: "manual" },
     );
-    expect(response.status).toBe(400);
+    const rawBody = await response.text();
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/complete/error");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(rawBody).toBe("");
+    expect(response.headers.get("location")).not.toContain("wrong-state");
+    expect(response.headers.get("location")).not.toContain("never-returned");
     await expect(rejected).resolves.toMatchObject({ code: "state_mismatch" });
+
+    const completion = await fetch(`${callback.redirectUri}/complete/error`);
+    const completionHtml = await completion.text();
+    expect(completion.status).toBe(200);
+    expect(completion.headers.get("cache-control")).toBe("no-store");
+    expect(completion.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(completionHtml).toContain("Connexion non validée");
+    expect(completionHtml).not.toContain("wrong-state");
+    expect(completionHtml).not.toContain("never-returned");
+    await callback.close();
+  });
+
+  it("retire error_description, email, token et state de l'URL et de la page d'erreur", async () => {
+    const state = createOAuthState();
+    const callback = await createMicrosoftLoopbackCallback({
+      expectedState: state,
+      timeoutMs: 2_000,
+    });
+    const rejected = callback.waitForCode.catch((error: unknown) => error);
+    const rawCallback = new URL(callback.redirectUri);
+    rawCallback.searchParams.set("state", state);
+    rawCallback.searchParams.set("error", "unauthorized_client");
+    rawCallback.searchParams.set(
+      "error_description",
+      "AADSTS50020 alice@example.invalid access_token=very-secret-token",
+    );
+
+    const response = await fetch(rawCallback, { redirect: "manual" });
+    const rawBody = await response.text();
+    const location = response.headers.get("location") ?? "";
+    expect(response.status).toBe(303);
+    expect(location).toBe("/complete/error");
+    expect(rawBody).toBe("");
+    for (const secret of [
+      state,
+      "error_description",
+      "alice@example.invalid",
+      "very-secret-token",
+    ]) {
+      expect(location).not.toContain(secret);
+      expect(rawBody).not.toContain(secret);
+    }
+
+    const callbackError = await rejected;
+    expect(callbackError).toMatchObject({ code: "oauth_error" });
+    expect((callbackError as Error).message).toBe(
+      "Microsoft OAuth a refusé la demande (AADSTS50020).",
+    );
+
+    const completion = await fetch(`${callback.redirectUri}${location}`);
+    const completionHtml = await completion.text();
+    expect(completion.status).toBe(200);
+    expect(completion.headers.get("cache-control")).toBe("no-store");
+    expect(completion.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(completionHtml).toContain("Connexion non validée");
+    for (const secret of [
+      state,
+      "AADSTS50020",
+      "error_description",
+      "alice@example.invalid",
+      "very-secret-token",
+    ]) {
+      expect(completionHtml).not.toContain(secret);
+    }
     await callback.close();
   });
 

@@ -1,5 +1,8 @@
 "use strict";
 
+const AZURE_CLIENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function requiredPublicSetting(name) {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -10,6 +13,23 @@ function requiredPublicSetting(name) {
   return value;
 }
 
+function requiredAzureClientId() {
+  const value =
+    process.env.JACH_AZURE_CLIENT_ID?.trim() || process.env.JACH_ID?.trim();
+  if (!value) {
+    throw new Error(
+      "JACH_AZURE_CLIENT_ID (ou l'alias JACH_ID) est requis explicitement pour construire un installateur. Le fallback de développement n'est jamais accepté pour une distribution.",
+    );
+  }
+  if (!AZURE_CLIENT_ID_PATTERN.test(value)) {
+    throw new Error(
+      "JACH_AZURE_CLIENT_ID (ou JACH_ID) doit être un identifiant d'application Azure au format GUID.",
+    );
+  }
+  return value;
+}
+
+requiredAzureClientId();
 const updateFeedUrl = requiredPublicSetting("JACH_SIGNED_UPDATE_FEED_URL");
 const publisherName = requiredPublicSetting("JACH_WINDOWS_PUBLISHER_NAME");
 const parsedUpdateFeed = new URL(updateFeedUrl);
